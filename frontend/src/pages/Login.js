@@ -18,6 +18,7 @@ const Login = () => {
     setError('');
 
     try {
+      // 1. Vérifier d'abord dans localStorage (utilisateurs importés/existants)
       const savedUsers = localStorage.getItem('users');
       const users = savedUsers ? JSON.parse(savedUsers) : [];
 
@@ -26,6 +27,7 @@ const Login = () => {
       );
 
       if (localUser) {
+        // Gestion utilisateur localStorage
         let userRole = localUser.role;
         let redirectPath = '';
 
@@ -38,18 +40,18 @@ const Login = () => {
           redirectPath = '/apprenant';
         }
 
+        // Définir l'avatar selon le rôle
+        let avatar = '👤';
+        if (userRole === 'admin') avatar = '👑';
+        else if (userRole === 'formateur') avatar = '🎓';
+
         const userData = {
           id: localUser.id,
           matricule: localUser.matricule,
           nom: localUser.nom,
           prenom: localUser.prenom,
           role: userRole,
-          avatar:
-            userRole === 'formateur'
-              ? '🎓'
-              : userRole === 'admin'
-              ? '👑'
-              : '👤',
+          avatar: avatar,
           fullName: `${localUser.prenom} ${localUser.nom}`,
           email: localUser.email || '',
           telephone: localUser.telephone || '',
@@ -61,29 +63,59 @@ const Login = () => {
         return;
       }
 
+      // 2. Sinon, essayer la connexion MongoDB
       const result = await dispatch(login({ matricule, password }));
 
       if (!result.error && result.payload) {
         const userData = result.payload.user;
-
-        const adminUser = {
+        
+        // Utiliser le rôle réel de l'utilisateur depuis MongoDB
+        let userRole = userData.role; // 'apprenant', 'formateur', ou 'admin'
+        let redirectPath = '';
+        
+        // ✅ CORRECTION: Déterminer la redirection basée sur le rôle réel avec les bons chemins
+        if (userRole === 'admin') {
+          redirectPath = '/dashboard';
+        } else if (userRole === 'formateur') {
+          redirectPath = '/formateur';
+        } else {
+          userRole = 'user'; // Normaliser pour l'UI
+          redirectPath = '/apprenant';  // ✅ Chemin correct avec slash
+        }
+        
+        // Avatar basé sur le rôle réel
+        let avatar = '👤';
+        if (userRole === 'admin') avatar = '👑';
+        else if (userRole === 'formateur') avatar = '🎓';
+        
+        const userForStorage = {
           id: userData.id,
           matricule: userData.matricule,
           nom: userData.nom,
           prenom: userData.prenom || userData.nom,
-          role: 'admin',
-          avatar: '👑',
+          role: userRole,
+          avatar: avatar,
           fullName: `${userData.prenom || userData.nom} ${userData.nom}`,
+          email: userData.email,
+          telephone: userData.telephone,
           source: 'mongodb',
         };
-
-        localStorage.setItem('currentUser', JSON.stringify(adminUser));
-        navigate('/dashboard');
+        
+        localStorage.setItem('currentUser', JSON.stringify(userForStorage));
+        
+        // Stocker également le token si présent
+        if (result.payload.token) {
+          localStorage.setItem('token', result.payload.token);
+        }
+        
+        // ✅ Rediriger vers le bon chemin
+        navigate(redirectPath);
       } else {
         setError('Matricule ou mot de passe incorrect');
       }
     } catch (err) {
-      setError('Erreur de connexion');
+      console.error('Erreur de connexion:', err);
+      setError('Erreur de connexion au serveur');
     } finally {
       setIsLoading(false);
     }
@@ -91,14 +123,12 @@ const Login = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#0f172a] relative overflow-hidden">
-
       {/* Glow Effects */}
       <div className="absolute w-[400px] h-[400px] bg-blue-500/20 blur-[120px] rounded-full top-[-100px] left-[-100px]" />
       <div className="absolute w-[300px] h-[300px] bg-cyan-400/20 blur-[100px] rounded-full bottom-[-100px] right-[-100px]" />
 
       {/* Card */}
       <div className="relative z-10 w-[420px] p-8 rounded-3xl bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl">
-
         {/* Header */}
         <div className="text-center mb-8">
           <div className="w-20 h-20 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
@@ -114,7 +144,7 @@ const Login = () => {
           </p>
         </div>
 
-        {/* Error */}
+        {/* Error Message */}
         {error && (
           <div className="bg-red-500/20 border border-red-400/30 text-red-300 px-4 py-3 rounded-xl mb-6 text-sm text-center">
             {error}
@@ -123,8 +153,7 @@ const Login = () => {
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-5">
-
-          {/* Matricule */}
+          {/* Matricule Field */}
           <div>
             <label className="block text-gray-300 text-sm mb-2">
               Matricule
@@ -138,13 +167,13 @@ const Login = () => {
                 value={matricule}
                 onChange={(e) => setMatricule(e.target.value)}
                 className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-gray-400 focus:ring-2 focus:ring-cyan-400 outline-none transition"
-                placeholder="Ex: ADMIN001, 2026XXXX"
+                placeholder="Ex: ADMIN001, A20263792, F20261824"
                 required
               />
             </div>
           </div>
 
-          {/* Password */}
+          {/* Password Field */}
           <div>
             <label className="block text-gray-300 text-sm mb-2">
               Mot de passe
@@ -164,15 +193,24 @@ const Login = () => {
             </div>
           </div>
 
-          {/* Button */}
+          {/* Submit Button */}
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full py-3 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-semibold shadow-lg hover:scale-105 transition-transform duration-200 disabled:opacity-50"
+            className="w-full py-3 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-semibold shadow-lg hover:scale-105 transition-transform duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isLoading ? 'Connexion en cours...' : 'Se connecter'}
+            {isLoading ? (
+              <span className="flex items-center justify-center gap-2">
+                <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Connexion en cours...
+              </span>
+            ) : (
+              'Se connecter'
+            )}
           </button>
-
         </form>
 
         {/* Footer */}
@@ -180,9 +218,7 @@ const Login = () => {
           <p className="text-xs text-gray-400">
             Contactez l'administrateur pour obtenir vos identifiants
           </p>
-
         </div>
-
       </div>
     </div>
   );

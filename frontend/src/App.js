@@ -15,6 +15,7 @@ import FormationManagement from './pages/FormationManagement';
 import Statistiques from './pages/Statistiques';
 import Chat from './pages/Chat';
 import LandingPage from './pages/LandingPage';
+import ApprenantFormations from './pages/ApprenantFormations';
 
 const PrivateRoute = ({ children }) => {
   const { token } = useSelector((state) => state.auth);
@@ -158,20 +159,38 @@ function App() {
             }
           />
           
+          {/* Route Apprenant Dashboard */}
           <Route
             path="/apprenant"
             element={
               <UserRoute allowedRoles={['user']}>
-                <ApprenantDashboard />
+                <Layout>
+                  <ApprenantDashboard />
+                </Layout>
               </UserRoute>
             }
           />
           
+          {/* Route Apprenant Formations - CORRIGÉE */}
+          <Route
+            path="/apprenant/formations"
+            element={
+              <UserRoute allowedRoles={['user']}>
+                <Layout>
+                  <ApprenantFormations />
+                </Layout>
+              </UserRoute>
+            }
+          />
+          
+          {/* Route Formateur Dashboard */}
           <Route
             path="/formateur"
             element={
               <UserRoute allowedRoles={['formateur']}>
-                <FormateurDashboard />
+                <Layout>
+                  <FormateurDashboard />
+                </Layout>
               </UserRoute>
             }
           />

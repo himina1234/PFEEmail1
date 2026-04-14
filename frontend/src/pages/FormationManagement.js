@@ -1,11 +1,12 @@
-// FormationManagement.js
+// FormationManagement.js - Version avec MongoDB
 import React, { useState, useEffect } from 'react';
 import { 
   Plus, Edit, Trash2, X, CheckCircle, AlertCircle,
   BookOpen, Clock, DollarSign, Users, Star, Calendar,
-  Search, Filter, Download, Upload, Eye, Copy,
-  Video, FileText, Link, Image, Save, RefreshCw
+  Search, Eye, Copy, RefreshCw, MapPin, Briefcase, Target, Award,
+  Database, Cloud, HardDrive
 } from 'lucide-react';
+import formationAPI from '../services/formationApi';
 
 const FormationManagement = () => {
   const [formations, setFormations] = useState([]);
@@ -18,142 +19,47 @@ const FormationManagement = () => {
   const [showDetails, setShowDetails] = useState(null);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [syncStatus, setSyncStatus] = useState({ synced: true, message: '✅ Connecté à MongoDB' });
   
   const [formData, setFormData] = useState({
     titre: '',
     description: '',
+    domaine: '',
     duree: '',
-    prix: '',
-    categorie: '',
-    niveau: 'debutant',
-    statut: 'actif',
-    image: '',
+    prix: 'Gratuit',
+    prerequis: '',
+    debouches: '',
+    wilayas: [],
+    placesDisponibles: '',
+    dateDebut: '',
     formateur: '',
     objectifs: [],
-    prerequis: [],
     contenu: [],
+    image: '',
+    niveau: 'debutant',
+    statut: 'actif',
     certificat: true,
-    places: '',
-    inscrits: 0,
-    dateDebut: '',
-    dateFin: '',
-    horaire: '',
     tags: []
   });
 
+  // Charger les formations depuis MongoDB
   useEffect(() => {
     loadFormations();
   }, []);
 
-  const loadFormations = () => {
-    const savedFormations = localStorage.getItem('formations');
-    if (savedFormations) {
-      setFormations(JSON.parse(savedFormations));
-    } else {
-      // Données par défaut
-      const defaultFormations = [
-        {
-          id: '1',
-          titre: 'Administration des Services Postaux',
-          description: 'Formation complète sur la gestion des services postaux et la relation client.',
-          duree: '40 heures',
-          prix: '15 000 DZD',
-          categorie: 'Administration',
-          niveau: 'intermediaire',
-          statut: 'actif',
-          image: 'https://images.unsplash.com/photo-1557804506-669a67965ba0?w=400&h=300&fit=crop',
-          formateur: 'Mohamed Kaci',
-          objectifs: [
-            'Maîtriser les procédures administratives',
-            'Gérer les réclamations clients',
-            'Utiliser les outils de gestion'
-          ],
-          prerequis: ['Bases de l\'administration', 'Connaissances informatiques'],
-          contenu: [
-            'Module 1: Introduction aux services postaux',
-            'Module 2: Gestion des documents',
-            'Module 3: Relation client',
-            'Module 4: Outils de gestion'
-          ],
-          certificat: true,
-          places: 25,
-          inscrits: 18,
-          dateDebut: '2026-04-15',
-          dateFin: '2026-05-20',
-          horaire: 'Lun-Mer-Ven 14h-17h',
-          tags: ['administration', 'service client', 'gestion'],
-          note: 4.8,
-          avis: 24
-        },
-        {
-          id: '2',
-          titre: 'Formation JavaScript Avancé',
-          description: 'Maîtrisez les concepts avancés de JavaScript pour le développement web.',
-          duree: '30 heures',
-          prix: '12 000 DZD',
-          categorie: 'Développement Web',
-          niveau: 'avance',
-          statut: 'actif',
-          image: 'https://images.unsplash.com/photo-1579468118864-1b9ea3c0db4a?w=400&h=300&fit=crop',
-          formateur: 'Fatima Zohra',
-          objectifs: [
-            'Comprendre les closures et le scope',
-            'Maîtriser les promesses et async/await',
-            'Développer avec les design patterns'
-          ],
-          prerequis: ['Bases de JavaScript', 'HTML/CSS'],
-          contenu: [
-            'Module 1: Fonctions avancées',
-            'Module 2: Programmation asynchrone',
-            'Module 3: Design Patterns',
-            'Module 4: Performance et optimisation'
-          ],
-          certificat: true,
-          places: 20,
-          inscrits: 15,
-          dateDebut: '2026-04-10',
-          dateFin: '2026-05-15',
-          horaire: 'Mar-Jeu 18h-21h',
-          tags: ['javascript', 'web', 'programmation'],
-          note: 4.9,
-          avis: 32
-        },
-        {
-          id: '3',
-          titre: 'Communication Professionnelle',
-          description: 'Développez vos compétences en communication orale et écrite.',
-          duree: '20 heures',
-          prix: '8 000 DZD',
-          categorie: 'Soft Skills',
-          niveau: 'debutant',
-          statut: 'actif',
-          image: 'https://images.unsplash.com/photo-1552581234-26160f608093?w=400&h=300&fit=crop',
-          formateur: 'Karim Benali',
-          objectifs: [
-            'Améliorer la communication orale',
-            'Rédiger des documents professionnels',
-            'Gérer les conflits'
-          ],
-          prerequis: ['Aucun'],
-          contenu: [
-            'Module 1: Bases de la communication',
-            'Module 2: Communication écrite',
-            'Module 3: Communication orale',
-            'Module 4: Gestion des conflits'
-          ],
-          certificat: true,
-          places: 30,
-          inscrits: 22,
-          dateDebut: '2026-05-01',
-          dateFin: '2026-05-25',
-          horaire: 'Sam-Dim 09h-12h',
-          tags: ['communication', 'soft skills', 'professionnel'],
-          note: 4.7,
-          avis: 18
-        }
-      ];
-      localStorage.setItem('formations', JSON.stringify(defaultFormations));
-      setFormations(defaultFormations);
+  const loadFormations = async () => {
+    setLoading(true);
+    try {
+      const data = await formationAPI.getAllFormations();
+      setFormations(data);
+      setSyncStatus({ synced: true, message: `✅ ${data.length} formations chargées depuis MongoDB` });
+      setTimeout(() => setSyncStatus({ synced: true, message: '✅ Connecté à MongoDB' }), 3000);
+    } catch (error) {
+      console.error('Erreur:', error);
+      setError('Erreur lors du chargement des formations');
+      setSyncStatus({ synced: false, message: '⚠️ Erreur de connexion à MongoDB' });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -175,26 +81,30 @@ const FormationManagement = () => {
     setFormData({ ...formData, tags });
   };
 
+  const handleWilayasChange = (value) => {
+    const wilayas = value.split(',').map(w => w.trim()).filter(w => w);
+    setFormData({ ...formData, wilayas });
+  };
+
   const resetForm = () => {
     setFormData({
       titre: '',
       description: '',
+      domaine: '',
       duree: '',
-      prix: '',
-      categorie: '',
-      niveau: 'debutant',
-      statut: 'actif',
-      image: '',
+      prix: 'Gratuit',
+      prerequis: '',
+      debouches: '',
+      wilayas: [],
+      placesDisponibles: '',
+      dateDebut: '',
       formateur: '',
       objectifs: [],
-      prerequis: [],
       contenu: [],
+      image: '',
+      niveau: 'debutant',
+      statut: 'actif',
       certificat: true,
-      places: '',
-      inscrits: 0,
-      dateDebut: '',
-      dateFin: '',
-      horaire: '',
       tags: []
     });
     setEditingFormation(null);
@@ -205,7 +115,7 @@ const FormationManagement = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (!formData.titre || !formData.description || !formData.duree || !formData.prix || !formData.categorie) {
+    if (!formData.titre || !formData.description || !formData.duree || !formData.domaine) {
       setError('Veuillez remplir tous les champs obligatoires');
       return;
     }
@@ -214,33 +124,32 @@ const FormationManagement = () => {
     setError(null);
 
     try {
-      let updatedFormations;
+      let result;
       
       if (editingFormation) {
-        updatedFormations = formations.map(f =>
-          f.id === editingFormation.id
-            ? { ...f, ...formData, updatedAt: new Date().toISOString() }
-            : f
-        );
-        setSuccess('Formation modifiée avec succès !');
+        // Mettre à jour la formation existante
+        result = await formationAPI.updateFormation(editingFormation._id, formData);
+        if (result.success) {
+          setSuccess('Formation modifiée avec succès dans MongoDB !');
+          await loadFormations(); // Recharger la liste
+        } else {
+          setError(result.message);
+        }
       } else {
-        const newFormation = {
-          id: Date.now().toString(),
-          ...formData,
-          inscrits: 0,
-          note: 0,
-          avis: 0,
-          createdAt: new Date().toISOString()
-        };
-        updatedFormations = [...formations, newFormation];
-        setSuccess('Formation ajoutée avec succès !');
+        // Créer une nouvelle formation
+        result = await formationAPI.createFormation(formData);
+        if (result.success) {
+          setSuccess('Formation ajoutée avec succès dans MongoDB !');
+          await loadFormations(); // Recharger la liste
+        } else {
+          setError(result.message);
+        }
       }
       
-      localStorage.setItem('formations', JSON.stringify(updatedFormations));
-      setFormations(updatedFormations);
-      resetForm();
-      
-      setTimeout(() => setSuccess(null), 3000);
+      if (result.success) {
+        resetForm();
+        setTimeout(() => setSuccess(null), 3000);
+      }
     } catch (error) {
       setError('Erreur lors de l\'opération: ' + error.message);
     } finally {
@@ -248,13 +157,23 @@ const FormationManagement = () => {
     }
   };
 
-  const handleDelete = (id) => {
-    if (window.confirm('Êtes-vous sûr de vouloir supprimer cette formation ?')) {
-      const updatedFormations = formations.filter(f => f.id !== id);
-      localStorage.setItem('formations', JSON.stringify(updatedFormations));
-      setFormations(updatedFormations);
-      setSuccess('Formation supprimée avec succès !');
-      setTimeout(() => setSuccess(null), 3000);
+  const handleDelete = async (id) => {
+    if (window.confirm('Êtes-vous sûr de vouloir supprimer cette formation de MongoDB ?')) {
+      setLoading(true);
+      try {
+        const result = await formationAPI.deleteFormation(id);
+        if (result.success) {
+          setSuccess('Formation supprimée avec succès de MongoDB !');
+          await loadFormations(); // Recharger la liste
+          setTimeout(() => setSuccess(null), 3000);
+        } else {
+          setError(result.message);
+        }
+      } catch (error) {
+        setError('Erreur lors de la suppression: ' + error.message);
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -263,60 +182,85 @@ const FormationManagement = () => {
     setFormData({
       titre: formation.titre,
       description: formation.description,
+      domaine: formation.domaine,
       duree: formation.duree,
-      prix: formation.prix,
-      categorie: formation.categorie,
-      niveau: formation.niveau,
-      statut: formation.statut,
-      image: formation.image || '',
-      formateur: formation.formateur,
+      prix: formation.prix || 'Gratuit',
+      prerequis: formation.prerequis || '',
+      debouches: formation.debouches || '',
+      wilayas: formation.wilayas || [],
+      placesDisponibles: formation.placesDisponibles || '',
+      dateDebut: formation.dateDebut ? formation.dateDebut.split('T')[0] : '',
+      formateur: formation.formateur || '',
       objectifs: formation.objectifs || [],
-      prerequis: formation.prerequis || [],
       contenu: formation.contenu || [],
-      certificat: formation.certificat,
-      places: formation.places || '',
-      inscrits: formation.inscrits || 0,
-      dateDebut: formation.dateDebut || '',
-      dateFin: formation.dateFin || '',
-      horaire: formation.horaire || '',
+      image: formation.image || '',
+      niveau: formation.niveau || 'debutant',
+      statut: formation.statut || 'actif',
+      certificat: formation.certificat !== undefined ? formation.certificat : true,
       tags: formation.tags || []
     });
     setShowForm(true);
   };
 
-  const duplicateFormation = (formation) => {
-    const newFormation = {
-      ...formation,
-      id: Date.now().toString(),
-      titre: `${formation.titre} (Copie)`,
-      inscrits: 0,
-      createdAt: new Date().toISOString()
-    };
-    const updatedFormations = [...formations, newFormation];
-    localStorage.setItem('formations', JSON.stringify(updatedFormations));
-    setFormations(updatedFormations);
-    setSuccess('Formation dupliquée avec succès !');
-    setTimeout(() => setSuccess(null), 3000);
+  const duplicateFormation = async (formation) => {
+    setLoading(true);
+    try {
+      const newFormation = {
+        ...formation,
+        titre: `${formation.titre} (Copie)`,
+        placesDisponibles: formation.placesDisponibles,
+        dateDebut: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // +7 jours
+      };
+      delete newFormation._id;
+      delete newFormation.createdAt;
+      delete newFormation.updatedAt;
+      
+      const result = await formationAPI.createFormation(newFormation);
+      if (result.success) {
+        setSuccess('Formation dupliquée avec succès dans MongoDB !');
+        await loadFormations();
+        setTimeout(() => setSuccess(null), 3000);
+      } else {
+        setError(result.message);
+      }
+    } catch (error) {
+      setError('Erreur lors de la duplication: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const toggleStatut = (id) => {
-    const updatedFormations = formations.map(f =>
-      f.id === id ? { ...f, statut: f.statut === 'actif' ? 'inactif' : 'actif' } : f
-    );
-    localStorage.setItem('formations', JSON.stringify(updatedFormations));
-    setFormations(updatedFormations);
+  const toggleStatut = async (formation) => {
+    setLoading(true);
+    try {
+      const newStatut = formation.statut === 'actif' ? 'inactif' : 'actif';
+      const result = await formationAPI.updateFormation(formation._id, { statut: newStatut });
+      if (result.success) {
+        setSuccess(`Formation ${newStatut === 'actif' ? 'activée' : 'désactivée'} avec succès !`);
+        await loadFormations();
+        setTimeout(() => setSuccess(null), 3000);
+      } else {
+        setError(result.message);
+      }
+    } catch (error) {
+      setError('Erreur lors du changement de statut: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const filteredFormations = formations.filter(f => {
-    const matchesSearch = f.titre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         f.description.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = !selectedCategory || f.categorie === selectedCategory;
+    const matchesSearch = f.titre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         f.description?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCategory = !selectedCategory || f.domaine === selectedCategory;
     const matchesStatus = selectedStatus === 'all' || f.statut === selectedStatus;
     return matchesSearch && matchesCategory && matchesStatus;
   });
 
   const categories = [
-    'Administration',
+    'Services Postaux',
+    'Monétique & IT',
+    'Gestion Financière',
     'Développement Web',
     'Soft Skills',
     'Marketing Digital',
@@ -357,8 +301,14 @@ const FormationManagement = () => {
                   Gestion des Formations
                 </h1>
                 <p className="text-blue-100">
-                  Créez, modifiez et gérez toutes les formations de la plateforme
+                  Gérez les formations directement dans MongoDB
                 </p>
+              </div>
+              <div className={`px-3 py-1 rounded-full text-sm font-medium flex items-center gap-2 ${
+                syncStatus.synced ? 'bg-green-500/20 text-green-200' : 'bg-red-500/20 text-red-200'
+              }`}>
+                <Database size={14} />
+                {syncStatus.message}
               </div>
             </div>
           </div>
@@ -372,7 +322,7 @@ const FormationManagement = () => {
                   <p className="text-3xl font-bold text-gray-800">{formations.length}</p>
                 </div>
                 <div className="bg-blue-100 rounded-full p-3">
-                  <BookOpen className="text-blue-600" size={24} />
+                  <Database className="text-blue-600" size={24} />
                 </div>
               </div>
             </div>
@@ -392,9 +342,9 @@ const FormationManagement = () => {
             <div className="bg-white rounded-xl p-6 shadow-md">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-gray-500 text-sm">Total inscrits</p>
+                  <p className="text-gray-500 text-sm">Total places</p>
                   <p className="text-3xl font-bold text-orange-600">
-                    {formations.reduce((acc, f) => acc + (f.inscrits || 0), 0)}
+                    {formations.reduce((acc, f) => acc + (f.placesDisponibles || 0), 0)}
                   </p>
                 </div>
                 <div className="bg-orange-100 rounded-full p-3">
@@ -405,13 +355,14 @@ const FormationManagement = () => {
             <div className="bg-white rounded-xl p-6 shadow-md">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-gray-500 text-sm">Note moyenne</p>
+                  <p className="text-gray-500 text-sm">Taux d'occupation</p>
                   <p className="text-3xl font-bold text-purple-600">
-                    {(formations.reduce((acc, f) => acc + (f.note || 0), 0) / formations.length || 0).toFixed(1)}
+                    {Math.round((formations.reduce((acc, f) => acc + (f.inscrits || 0), 0) / 
+                                formations.reduce((acc, f) => acc + (f.placesDisponibles || 1), 0)) * 100)}%
                   </p>
                 </div>
                 <div className="bg-purple-100 rounded-full p-3">
-                  <Star className="text-purple-600" size={24} />
+                  <Target className="text-purple-600" size={24} />
                 </div>
               </div>
             </div>
@@ -431,7 +382,7 @@ const FormationManagement = () => {
                 className="bg-gradient-to-r from-green-500 to-green-600 text-white px-6 py-3 rounded-xl hover:from-green-600 hover:to-green-700 transition-all flex items-center gap-2 shadow-md"
               >
                 <Plus size={20} />
-                Ajouter une formation
+                Ajouter une formation à MongoDB
               </button>
               
               <div className="flex gap-3">
@@ -466,6 +417,15 @@ const FormationManagement = () => {
                   <option value="actif">Actifs</option>
                   <option value="inactif">Inactifs</option>
                 </select>
+
+                <button
+                  onClick={loadFormations}
+                  className="px-4 py-2 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-colors flex items-center gap-2"
+                  title="Synchroniser avec MongoDB"
+                >
+                  <RefreshCw size={18} />
+                  Sync
+                </button>
               </div>
             </div>
           </div>
@@ -489,7 +449,11 @@ const FormationManagement = () => {
           {showForm && (
             <div className="m-6 p-6 bg-gradient-to-br from-gray-50 to-white rounded-xl border border-gray-200 shadow-lg">
               <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
-                {editingFormation ? '✏️ Modifier la formation' : '➕ Ajouter une formation'}
+                {editingFormation ? (
+                  <>✏️ Modifier la formation dans MongoDB</>
+                ) : (
+                  <>➕ Ajouter une formation à MongoDB</>
+                )}
               </h3>
               <form onSubmit={handleSubmit}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -501,7 +465,8 @@ const FormationManagement = () => {
                       value={formData.titre}
                       onChange={handleInputChange}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="Ex: Formation JavaScript Avancé"
+                      placeholder="Ex: Agent des Services Postaux"
+                      required
                     />
                   </div>
                   
@@ -514,18 +479,20 @@ const FormationManagement = () => {
                       rows="3"
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                       placeholder="Description détaillée de la formation..."
+                      required
                     />
                   </div>
                   
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Catégorie *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Domaine *</label>
                     <select
-                      name="categorie"
-                      value={formData.categorie}
+                      name="domaine"
+                      value={formData.domaine}
                       onChange={handleInputChange}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      required
                     >
-                      <option value="">Sélectionner une catégorie</option>
+                      <option value="">Sélectionner un domaine</option>
                       {categories.map(cat => (
                         <option key={cat} value={cat}>{cat}</option>
                       ))}
@@ -556,13 +523,14 @@ const FormationManagement = () => {
                         value={formData.duree}
                         onChange={handleInputChange}
                         className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                        placeholder="40 heures"
+                        placeholder="6 mois (3 mois théorie + 3 mois stage)"
+                        required
                       />
                     </div>
                   </div>
                   
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Prix *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Prix</label>
                     <div className="relative">
                       <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
                       <input
@@ -571,9 +539,34 @@ const FormationManagement = () => {
                         value={formData.prix}
                         onChange={handleInputChange}
                         className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                        placeholder="15 000 DZD"
+                        placeholder="Gratuit / 15 000 DZD"
                       />
                     </div>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Places disponibles *</label>
+                    <input
+                      type="number"
+                      name="placesDisponibles"
+                      value={formData.placesDisponibles}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      placeholder="120"
+                      required
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Date de début *</label>
+                    <input
+                      type="date"
+                      name="dateDebut"
+                      value={formData.dateDebut}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
                   </div>
                   
                   <div>
@@ -585,52 +578,6 @@ const FormationManagement = () => {
                       onChange={handleInputChange}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                       placeholder="Nom du formateur"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Nombre de places</label>
-                    <input
-                      type="number"
-                      name="places"
-                      value={formData.places}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="25"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Date de début</label>
-                    <input
-                      type="date"
-                      name="dateDebut"
-                      value={formData.dateDebut}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Date de fin</label>
-                    <input
-                      type="date"
-                      name="dateFin"
-                      value={formData.dateFin}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Horaire</label>
-                    <input
-                      type="text"
-                      name="horaire"
-                      value={formData.horaire}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="Lun-Mer-Ven 14h-17h"
                     />
                   </div>
                   
@@ -673,24 +620,37 @@ const FormationManagement = () => {
                   </div>
                   
                   <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Prérequis</label>
+                    <textarea
+                      name="prerequis"
+                      value={formData.prerequis}
+                      onChange={handleInputChange}
+                      rows="2"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      placeholder="Baccalauréat toutes séries confondues"
+                    />
+                  </div>
+                  
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Débouchés</label>
+                    <textarea
+                      name="debouches"
+                      value={formData.debouches}
+                      onChange={handleInputChange}
+                      rows="2"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      placeholder="Agent postal, Chef de bureau postal, Responsable clientèle..."
+                    />
+                  </div>
+                  
+                  <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">Objectifs (un par ligne)</label>
                     <textarea
                       value={formData.objectifs.join('\n')}
                       onChange={(e) => handleArrayChange('objectifs', e.target.value)}
                       rows="3"
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="Maîtriser les concepts avancés&#10;Développer des applications complexes&#10;Optimiser les performances"
-                    />
-                  </div>
-                  
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Prérequis (un par ligne)</label>
-                    <textarea
-                      value={formData.prerequis.join('\n')}
-                      onChange={(e) => handleArrayChange('prerequis', e.target.value)}
-                      rows="3"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="Bases de JavaScript&#10;Connaissances HTML/CSS"
+                      placeholder="Maîtriser l'accueil client&#10;Gérer le courrier et les colis&#10;Utiliser les outils postaux"
                     />
                   </div>
                   
@@ -701,7 +661,7 @@ const FormationManagement = () => {
                       onChange={(e) => handleArrayChange('contenu', e.target.value)}
                       rows="4"
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="Module 1: Introduction&#10;Module 2: Concepts avancés&#10;Module 3: Projet pratique"
+                      placeholder="Module 1: Introduction&#10;Module 2: Gestion du courrier&#10;Module 3: Accueil client"
                     />
                   </div>
                   
@@ -712,7 +672,18 @@ const FormationManagement = () => {
                       value={formData.tags.join(', ')}
                       onChange={(e) => handleTagsChange(e.target.value)}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="javascript, web, programmation"
+                      placeholder="services postaux, agent, clientèle"
+                    />
+                  </div>
+                  
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Wilayas (séparées par des virgules)</label>
+                    <input
+                      type="text"
+                      value={formData.wilayas.join(', ')}
+                      onChange={(e) => handleWilayasChange(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      placeholder="Alger, Oran, Constantine"
                     />
                   </div>
                 </div>
@@ -721,9 +692,10 @@ const FormationManagement = () => {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 text-white px-6 py-3 rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all disabled:opacity-50"
+                    className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 text-white px-6 py-3 rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                   >
-                    {loading ? 'Traitement...' : (editingFormation ? 'Mettre à jour' : 'Ajouter')}
+                    <Database size={18} />
+                    {loading ? 'Traitement...' : (editingFormation ? 'Mettre à jour dans MongoDB' : 'Ajouter à MongoDB')}
                   </button>
                   <button
                     type="button"
@@ -739,19 +711,29 @@ const FormationManagement = () => {
 
           {/* Liste des formations */}
           <div className="p-6">
-            <h3 className="text-lg font-semibold mb-4">
-              📚 Liste des formations ({filteredFormations.length})
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <Cloud size={18} />
+              Formations MongoDB ({filteredFormations.length})
             </h3>
             
-            {filteredFormations.length === 0 ? (
+            {loading && (
               <div className="text-center py-12">
-                <BookOpen className="mx-auto text-gray-400 mb-4" size={48} />
-                <p className="text-gray-500">Aucune formation trouvée</p>
+                <RefreshCw className="mx-auto text-gray-400 mb-4 animate-spin" size={48} />
+                <p className="text-gray-500">Chargement des formations...</p>
               </div>
-            ) : (
+            )}
+            
+            {!loading && filteredFormations.length === 0 && (
+              <div className="text-center py-12">
+                <Database className="mx-auto text-gray-400 mb-4" size={48} />
+                <p className="text-gray-500">Aucune formation trouvée dans MongoDB</p>
+              </div>
+            )}
+            
+            {!loading && filteredFormations.length > 0 && (
               <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
                 {filteredFormations.map(formation => (
-                  <div key={formation.id} className="bg-white border border-gray-200 rounded-xl hover:shadow-xl transition-all duration-300 overflow-hidden">
+                  <div key={formation._id} className="bg-white border border-gray-200 rounded-xl hover:shadow-xl transition-all duration-300 overflow-hidden">
                     {/* Image */}
                     <div className="relative h-48 overflow-hidden">
                       <img 
@@ -762,8 +744,14 @@ const FormationManagement = () => {
                       <div className="absolute top-4 right-4 flex gap-2">
                         {getStatutBadge(formation.statut)}
                       </div>
-                      <div className="absolute bottom-4 left-4">
+                      <div className="absolute bottom-4 left-4 flex gap-2">
                         {getNiveauBadge(formation.niveau)}
+                      </div>
+                      <div className="absolute bottom-4 right-4">
+                        <span className="px-2 py-1 bg-blue-500/90 text-white rounded-full text-xs font-medium flex items-center gap-1">
+                          <Database size={10} />
+                          MongoDB
+                        </span>
                       </div>
                     </div>
                     
@@ -784,14 +772,14 @@ const FormationManagement = () => {
                         </span>
                         <span className="flex items-center gap-1">
                           <DollarSign size={14} className="text-green-600" />
-                          <span className="text-green-600 font-medium">{formation.prix}</span>
+                          <span className="text-green-600 font-medium">{formation.prix || 'Gratuit'}</span>
                         </span>
                       </div>
                       
                       <div className="flex items-center gap-4 mb-3 text-sm">
                         <span className="flex items-center gap-1 text-gray-500">
                           <Users size={14} />
-                          {formation.inscrits}/{formation.places || '∞'} inscrits
+                          {formation.inscrits || 0}/{formation.placesDisponibles} places
                         </span>
                         <span className="flex items-center gap-1 text-gray-500">
                           <Calendar size={14} />
@@ -799,10 +787,11 @@ const FormationManagement = () => {
                         </span>
                       </div>
                       
-                      {formation.formateur && (
+                      {formation.wilayas && formation.wilayas.length > 0 && (
                         <p className="text-xs text-gray-500 mb-3 flex items-center gap-1">
-                          <Users size={12} />
-                          Formateur: {formation.formateur}
+                          <MapPin size={12} />
+                          {formation.wilayas.slice(0, 3).join(', ')}
+                          {formation.wilayas.length > 3 && ` +${formation.wilayas.length - 3}`}
                         </p>
                       )}
                       
@@ -835,7 +824,7 @@ const FormationManagement = () => {
                           <Copy size={16} />
                         </button>
                         <button
-                          onClick={() => toggleStatut(formation.id)}
+                          onClick={() => toggleStatut(formation)}
                           className={`p-2 rounded-lg transition-colors ${
                             formation.statut === 'actif' 
                               ? 'text-red-600 hover:bg-red-50' 
@@ -853,7 +842,7 @@ const FormationManagement = () => {
                           <Edit size={16} />
                         </button>
                         <button
-                          onClick={() => handleDelete(formation.id)}
+                          onClick={() => handleDelete(formation._id)}
                           className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                           title="Supprimer"
                         >
@@ -869,13 +858,16 @@ const FormationManagement = () => {
         </div>
       </div>
 
-      {/* Modal Détails */}
+      {/* Modal Détails - Garder le même code que précédemment */}
       {showDetails && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
           <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
             <div className="bg-gradient-to-r from-blue-600 to-purple-600 p-6 text-white sticky top-0">
               <div className="flex justify-between items-center">
-                <h3 className="text-xl font-bold">Détails de la formation</h3>
+                <h3 className="text-xl font-bold flex items-center gap-2">
+                  <Database size={20} />
+                  Détails de la formation (MongoDB)
+                </h3>
                 <button onClick={() => setShowDetails(null)} className="hover:bg-white/20 p-2 rounded-lg">
                   <X size={20} />
                 </button>
@@ -893,38 +885,43 @@ const FormationManagement = () => {
                 </div>
                 <div>
                   <h4 className="text-2xl font-bold text-gray-800 mb-2">{showDetails.titre}</h4>
-                  <div className="flex gap-2 mb-4">
+                  <div className="flex gap-2 mb-4 flex-wrap">
                     {getStatutBadge(showDetails.statut)}
                     {getNiveauBadge(showDetails.niveau)}
                   </div>
                   <p className="text-gray-600 mb-4">{showDetails.description}</p>
                   <div className="space-y-2 text-sm">
                     <p className="flex items-center gap-2"><Clock size={16} /> Durée: {showDetails.duree}</p>
-                    <p className="flex items-center gap-2"><DollarSign size={16} /> Prix: {showDetails.prix}</p>
-                    <p className="flex items-center gap-2"><Users size={16} /> Formateur: {showDetails.formateur}</p>
-                    <p className="flex items-center gap-2"><Calendar size={16} /> Dates: {showDetails.dateDebut} → {showDetails.dateFin}</p>
-                    <p className="flex items-center gap-2"><Clock size={16} /> Horaire: {showDetails.horaire}</p>
-                    <p className="flex items-center gap-2"><Users size={16} /> Places: {showDetails.inscrits}/{showDetails.places}</p>
+                    <p className="flex items-center gap-2"><DollarSign size={16} /> Prix: {showDetails.prix || 'Gratuit'}</p>
+                    <p className="flex items-center gap-2"><Users size={16} /> Formateur: {showDetails.formateur || 'À définir'}</p>
+                    <p className="flex items-center gap-2"><Calendar size={16} /> Date début: {new Date(showDetails.dateDebut).toLocaleDateString()}</p>
+                    <p className="flex items-center gap-2"><Users size={16} /> Places: {showDetails.inscrits || 0}/{showDetails.placesDisponibles}</p>
+                    {showDetails.wilayas && showDetails.wilayas.length > 0 && (
+                      <p className="flex items-center gap-2"><MapPin size={16} /> Wilayas: {showDetails.wilayas.join(', ')}</p>
+                    )}
+                    {showDetails.debouches && (
+                      <p className="flex items-start gap-2"><Briefcase size={16} /> Débouchés: {showDetails.debouches}</p>
+                    )}
                   </div>
                 </div>
               </div>
               
               <div className="mt-6">
-                <h5 className="font-bold text-gray-800 mb-2">Objectifs</h5>
+                <h5 className="font-bold text-gray-800 mb-2 flex items-center gap-2"><Target size={16} /> Objectifs</h5>
                 <ul className="list-disc list-inside space-y-1 mb-4">
                   {showDetails.objectifs?.map((obj, i) => (
                     <li key={i} className="text-gray-600 text-sm">{obj}</li>
                   ))}
                 </ul>
                 
-                <h5 className="font-bold text-gray-800 mb-2">Prérequis</h5>
+                <h5 className="font-bold text-gray-800 mb-2 flex items-center gap-2"><Award size={16} /> Prérequis</h5>
                 <ul className="list-disc list-inside space-y-1 mb-4">
-                  {showDetails.prerequis?.map((pre, i) => (
+                  {showDetails.prerequis?.split('\n').map((pre, i) => (
                     <li key={i} className="text-gray-600 text-sm">{pre}</li>
                   ))}
                 </ul>
                 
-                <h5 className="font-bold text-gray-800 mb-2">Contenu du cours</h5>
+                <h5 className="font-bold text-gray-800 mb-2 flex items-center gap-2"><BookOpen size={16} /> Contenu du cours</h5>
                 <ul className="list-disc list-inside space-y-1 mb-4">
                   {showDetails.contenu?.map((cont, i) => (
                     <li key={i} className="text-gray-600 text-sm">{cont}</li>
