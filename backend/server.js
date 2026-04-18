@@ -211,6 +211,7 @@ app.post('/api/auth/setup-admin', async (req, res) => {
 });
 
 // Route de connexion
+// ROUTE DE CONNEXION MODIFIÉE (remplacez l'ancienne)
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { matricule, password } = req.body;
@@ -221,25 +222,56 @@ app.post('/api/auth/login', async (req, res) => {
     
     if (!user) {
       console.log('❌ Utilisateur non trouvé:', matricule);
-      return res.status(401).json({ success: false, message: 'Matricule ou mot de passe incorrect' });
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Matricule ou mot de passe incorrect' 
+      });
     }
     
+    // VÉRIFICATION DU MOT DE PASSE
     const isValidPassword = await bcrypt.compare(password, user.password);
     
     if (!isValidPassword) {
       console.log('❌ Mot de passe incorrect pour:', matricule);
-      return res.status(401).json({ success: false, message: 'Matricule ou mot de passe incorrect' });
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Matricule ou mot de passe incorrect' 
+      });
     }
     
-    if (!user.isActive) {
-      return res.status(401).json({ success: false, message: 'Compte désactivé. Contactez l\'administrateur.' });
+    // VÉRIFICATION CRITIQUE : Vérifier si le compte est ACTIF
+    // Supporte les deux formats: isActive (boolean) ou status (string)
+    let isActive = true;
+    if (user.isActive !== undefined) {
+      isActive = user.isActive === true;
+    }
+    if (user.status !== undefined) {
+      isActive = (user.status === 'actif' || user.status === 'active');
     }
     
+    if (!isActive) {
+      console.log('❌ Compte désactivé pour:', matricule);
+      return res.status(403).json({ 
+        success: false, 
+        message: '❌ Votre compte est désactivé. Veuillez contacter un administrateur.',
+        code: 'ACCOUNT_DISABLED'
+      });
+    }
+    
+    // Générer le token JWT
     const token = jwt.sign(
-      { userId: user._id, role: user.role },
+      { 
+        userId: user._id, 
+        role: user.role,
+        status: isActive ? 'actif' : 'inactif'
+      },
       process.env.JWT_SECRET || 'secret_key_2026',
       { expiresIn: '7d' }
     );
+    
+    // Mettre à jour la dernière connexion
+    user.lastLogin = new Date();
+    await user.save();
     
     console.log('✅ Connexion réussie pour:', matricule);
     
@@ -254,28 +286,161 @@ app.post('/api/auth/login', async (req, res) => {
         email: user.email,
         telephone: user.telephone,
         role: user.role,
+        status: user.status || (user.isActive ? 'actif' : 'inactif'),
+        isActive: user.isActive,
         avatar: user.avatar
       }
     });
   } catch (error) {
     console.error('Erreur de connexion:', error);
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Erreur lors de la connexion' 
+    });
   }
 });
+// ROUTE POUR ACTIVER/DÉSACTIVER UN COMPTE
+app.put('/api/users/:userId/status', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { status } = req.body;
+    
+    console.log(`🔄 Changement de statut pour l'utilisateur ${userId}: ${status}`);
+    
+    // Normaliser le statut
+    let isActive;
+    let statusString;
+    
+    if (status === 'actif' || status === 'active' || status === true) {
+      isActive = true;
+      statusString = 'actif';
+    } else {
+      isActive = false;
+      statusString = 'inactif';
+    }
+    
+    // Mettre à jour l'utilisateur (supporte les deux formats)
+    const updateData = {
+      isActive: isActive,
+      status: statusString,
+      updatedAt: new Date()
+    };
+    
+    const user = await User.findByIdAndUpdate(
+      userId,
+      updateData,
+      { new: true }
+    ).select('-password');
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Utilisateur non trouvé'
+      });
+    }
+    
+    console.log(`✅ Statut mis à jour: ${user.nom} ${user.prenom} -> ${statusString}`);
+    
+    res.json({
+      success: true,
+      message: `Compte ${statusString === 'actif' ? 'activé' : 'désactivé'} avec succès`,
+      data: {
+        id: user._id,
+        status: statusString,
+        isActive: isActive
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Erreur changement statut:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Erreur lors du changement de statut'
+    });
+  }
+});
+// MIDDLEWARE POUR VÉRIFIER LE STATUT DU COMPTE À CHAQUE REQUÊTE
+const checkAccountStatus = async (req, res, next) => {
+  try {
+    const userId = req.userId;
+    
+    const user = await User.findById(userId).select('isActive status');
+    
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Utilisateur non trouvé'
+      });
+    }
+    
+    // Vérifier si le compte est actif
+    let isActive = true;
+    if (user.isActive !== undefined) {
+      isActive = user.isActive === true;
+    }
+    if (user.status !== undefined) {
+      isActive = (user.status === 'actif' || user.status === 'active');
+    }
+    
+    if (!isActive) {
+      return res.status(403).json({
+        success: false,
+        message: 'Votre compte a été désactivé. Veuillez contacter un administrateur.',
+        code: 'ACCOUNT_DISABLED'
+      });
+    }
+    
+    next();
+  } catch (error) {
+    console.error('Erreur vérification statut:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la vérification du compte'
+    });
+  }
+};
+
+// Appliquer ce middleware aux routes protégées
+// Exemple: app.use('/api/users', authMiddleware, checkAccountStatus, adminMiddleware, ...)
 
 // ============ ROUTES UTILISATEURS ============
 
 // Récupérer tous les utilisateurs
+// Récupérer tous les utilisateurs (avec statut)
 app.get('/api/users', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const users = await User.find({}).select('-password').sort({ createdAt: -1 });
-    res.json({ success: true, data: users, total: users.length });
+    const users = await User.find({})
+      .select('-password')
+      .sort({ createdAt: -1 });
+    
+    // Transformer les données pour avoir un format cohérent
+    const formattedUsers = users.map(user => ({
+      id: user._id,
+      _id: user._id,
+      nom: user.nom,
+      prenom: user.prenom,
+      matricule: user.matricule,
+      email: user.email,
+      telephone: user.telephone,
+      role: user.role,
+      status: user.status || (user.isActive ? 'actif' : 'inactif'),
+      isActive: user.isActive !== undefined ? user.isActive : true,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+      lastLogin: user.lastLogin,
+      avatar: user.avatar
+    }));
+    
+    res.json({ 
+      success: true, 
+      data: formattedUsers, 
+      total: formattedUsers.length 
+    });
   } catch (error) {
     console.error('Erreur:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
-
 // Récupérer un utilisateur par ID
 app.get('/api/users/:id', authMiddleware, async (req, res) => {
   try {

@@ -1,104 +1,152 @@
+// Dashboard.js - Version corrigée avec vraies données MongoDB
 import React, { useState, useEffect } from 'react';
-import { useSelector } from 'react-redux';
 import { 
   Users, GraduationCap, BookOpen, Crown, TrendingUp, Calendar, 
   Activity, Award, UserPlus, FileText, Settings, Bell, 
   ChevronRight, Clock, CheckCircle, AlertCircle, Download, 
   RefreshCw, MoreVertical, ArrowUpRight, ArrowDownRight,
   Sparkles, Zap, Shield, Target, BarChart3, PieChart,
-  Mail, Phone, MapPin, Globe, Database, Cloud, Server
+  Mail, Phone, MapPin, Globe, Database, Cloud, Server,
+  UserCheck, UserX, Star, DollarSign, Eye, Key, Trash2
 } from 'lucide-react';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
+import axios from 'axios';
 
 const Dashboard = () => {
-  const { currentUser, list: users, isLoading } = useSelector((state) => state.users);
+  const [users, setUsers] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [stats, setStats] = useState({
     totalUsers: 0,
     apprenants: 0,
     formateurs: 0,
     admins: 0,
     activeUsers: 0,
+    inactiveUsers: 0,
     newThisMonth: 0,
+    newThisWeek: 0,
     formationsCount: 0,
-    activeFormations: 0
+    activeFormations: 0,
+    completedFormations: 0
   });
+  
   const [formations, setFormations] = useState([]);
-  const [loadingFormations, setLoadingFormations] = useState(false);
   const [recentUsers, setRecentUsers] = useState([]);
 
-  // Récupérer les formations depuis MongoDB
+  const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+
+  const getAuthToken = () => {
+    return localStorage.getItem('token');
+  };
+
+  // Charger les utilisateurs depuis MongoDB
   useEffect(() => {
+    loadUsers();
     fetchFormations();
   }, []);
 
-  const fetchFormations = async () => {
-    setLoadingFormations(true);
+  const loadUsers = async () => {
+    setIsLoading(true);
+    setError(null);
+    
+    const token = getAuthToken();
+    if (!token) {
+      setError("Vous devez être connecté");
+      setIsLoading(false);
+      return;
+    }
+
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:5000/api/formations', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+      const response = await axios.get(`${API_URL}/users`, {
+        headers: { 'Authorization': `Bearer ${token}` }
       });
-      const data = await response.json();
-      if (data.success) {
-        setFormations(data.data || []);
-        const activeCount = data.data.filter(f => f.statut === 'actif').length;
+      
+      if (response.data.success) {
+        const usersData = response.data.data;
+        setUsers(usersData);
+        calculateStats(usersData);
+        
+        // 10 derniers utilisateurs
+        const recent = [...usersData]
+          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+          .slice(0, 10);
+        setRecentUsers(recent);
+      } else {
+        throw new Error(response.data.message || "Erreur de chargement");
+      }
+    } catch (err) {
+      console.error('Erreur chargement:', err);
+      setError(err.response?.data?.message || err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchFormations = async () => {
+    try {
+      const token = getAuthToken();
+      const response = await axios.get(`${API_URL}/formations`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.data.success) {
+        const formationsData = response.data.data;
+        setFormations(formationsData);
+        const activeCount = formationsData.filter(f => f.statut === 'actif').length;
+        const completedCount = formationsData.filter(f => f.statut === 'termine').length;
         setStats(prev => ({
           ...prev,
-          formationsCount: data.data.length,
-          activeFormations: activeCount
+          formationsCount: formationsData.length,
+          activeFormations: activeCount,
+          completedFormations: completedCount
         }));
       }
     } catch (error) {
       console.error('Erreur chargement formations:', error);
-    } finally {
-      setLoadingFormations(false);
     }
   };
 
-  useEffect(() => {
-    if (users && users.length > 0) {
-      // Filtrer les utilisateurs par rôle
-      const apprenants = users.filter(u => u.role === 'apprenant' || u.role === 'user');
-      const formateurs = users.filter(u => u.role === 'formateur');
-      const admins = users.filter(u => u.role === 'admin');
-      const activeUsers = users.filter(u => u.isActive !== false);
-      
-      // Nouveaux utilisateurs ce mois
-      const now = new Date();
-      const newThisMonth = users.filter(u => {
-        const createdAt = new Date(u.createdAt);
-        return createdAt.getMonth() === now.getMonth() && 
-               createdAt.getFullYear() === now.getFullYear();
-      }).length;
-      
-      // 5 derniers utilisateurs
-      const recent = [...users]
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-        .slice(0, 5);
-      
-      setStats({
-        totalUsers: users.length,
-        apprenants: apprenants.length,
-        formateurs: formateurs.length,
-        admins: admins.length,
-        activeUsers: activeUsers.length,
-        newThisMonth: newThisMonth,
-        formationsCount: stats.formationsCount,
-        activeFormations: stats.activeFormations
-      });
-      
-      setRecentUsers(recent);
-    }
-  }, [users]);
-
-  if (isLoading) return <LoadingSpinner />;
+  const calculateStats = (usersData) => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    const currentWeekStart = new Date(now);
+    currentWeekStart.setDate(now.getDate() - now.getDay());
+    
+    const apprenants = usersData.filter(u => u.role === 'apprenant').length;
+    const formateurs = usersData.filter(u => u.role === 'formateur').length;
+    const admins = usersData.filter(u => u.role === 'admin').length;
+    const activeUsers = usersData.filter(u => u.status === 'active').length;
+    const inactiveUsers = usersData.filter(u => u.status === 'inactive').length;
+    
+    const newThisMonth = usersData.filter(u => {
+      const createdAt = new Date(u.createdAt);
+      return createdAt.getMonth() === currentMonth && 
+             createdAt.getFullYear() === currentYear;
+    }).length;
+    
+    const newThisWeek = usersData.filter(u => {
+      const createdAt = new Date(u.createdAt);
+      return createdAt >= currentWeekStart;
+    }).length;
+    
+    setStats(prev => ({
+      ...prev,
+      totalUsers: usersData.length,
+      apprenants: apprenants,
+      formateurs: formateurs,
+      admins: admins,
+      activeUsers: activeUsers,
+      inactiveUsers: inactiveUsers,
+      newThisMonth: newThisMonth,
+      newThisWeek: newThisWeek
+    }));
+  };
 
   // Calcul des pourcentages
   const activityRate = stats.totalUsers > 0 ? Math.round((stats.activeUsers / stats.totalUsers) * 100) : 0;
   const apprenantRate = stats.totalUsers > 0 ? Math.round((stats.apprenants / stats.totalUsers) * 100) : 0;
   const formateurRate = stats.totalUsers > 0 ? Math.round((stats.formateurs / stats.totalUsers) * 100) : 0;
+  const inactiveRate = stats.totalUsers > 0 ? Math.round((stats.inactiveUsers / stats.totalUsers) * 100) : 0;
 
   const statsCards = [
     { 
@@ -157,6 +205,26 @@ const Dashboard = () => {
     return badges[role] || badges.apprenant;
   };
 
+  if (isLoading) return <LoadingSpinner />;
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
+        <div className="bg-white rounded-2xl p-8 shadow-xl text-center">
+          <AlertCircle size={48} className="text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-slate-800 mb-2">Erreur de chargement</h2>
+          <p className="text-slate-500">{error}</p>
+          <button 
+            onClick={loadUsers}
+            className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700"
+          >
+            Réessayer
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
       
@@ -180,17 +248,17 @@ const Dashboard = () => {
                 <div className="relative">
                   <div className="absolute inset-0 bg-gradient-to-tr from-emerald-400 to-teal-500 rounded-2xl blur-lg opacity-50"></div>
                   <div className="relative w-16 h-16 bg-gradient-to-tr from-emerald-400 to-teal-500 rounded-2xl flex items-center justify-center shadow-xl">
-                    <span className="text-3xl">{currentUser?.avatar || '👨‍💼'}</span>
+                    <span className="text-3xl">👨‍💼</span>
                   </div>
                 </div>
                 <div>
                   <h1 className="text-2xl lg:text-3xl font-bold text-white flex items-center gap-2">
-                    Ravi de vous revoir, {currentUser?.prenom || currentUser?.nom || 'Admin'} !
+                    Tableau de bord Administrateur
                     <Sparkles className="text-yellow-400" size={24} />
                   </h1>
                   <p className="text-slate-400 flex items-center gap-2 mt-1">
                     <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-                    AP Learning • Algérie Poste • Dashboard Administrateur
+                    AP Learning • Algérie Poste • Données en temps réel
                   </p>
                 </div>
               </div>
@@ -212,15 +280,15 @@ const Dashboard = () => {
                     </span>
                   </div>
                 </div>
-                <button className="p-3 bg-white/10 backdrop-blur-md rounded-2xl hover:bg-white/20 transition-all">
-                  <Bell size={20} className="text-white" />
+                <button onClick={loadUsers} className="p-3 bg-white/10 backdrop-blur-md rounded-2xl hover:bg-white/20 transition-all">
+                  <RefreshCw size={20} className="text-white" />
                 </button>
               </div>
             </div>
           </div>
         </div>
 
-        {/* --- STATS CARDS MODERNES --- */}
+        {/* --- STATS CARDS AVEC DONNÉES RÉELLES --- */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {statsCards.map((stat, index) => (
             <div 
@@ -252,7 +320,8 @@ const Dashboard = () => {
                     <span className="font-semibold text-slate-700">
                       {stat.title === 'Total Utilisateurs' ? activityRate : 
                        stat.title === 'Apprenants' ? apprenantRate :
-                       stat.title === 'Formateurs' ? formateurRate : '100'}%
+                       stat.title === 'Formateurs' ? formateurRate : 
+                       stat.title === 'Formations' && stats.formationsCount > 0 ? Math.round((stats.activeFormations / stats.formationsCount) * 100) : 100}%
                     </span>
                   </div>
                   <div className="mt-2 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
@@ -261,7 +330,8 @@ const Dashboard = () => {
                       style={{ 
                         width: `${stat.title === 'Total Utilisateurs' ? activityRate : 
                                  stat.title === 'Apprenants' ? apprenantRate :
-                                 stat.title === 'Formateurs' ? formateurRate : 100}%` 
+                                 stat.title === 'Formateurs' ? formateurRate : 
+                                 stat.title === 'Formations' && stats.formationsCount > 0 ? Math.round((stats.activeFormations / stats.formationsCount) * 100) : 100}%` 
                       }}
                     ></div>
                   </div>
@@ -274,7 +344,7 @@ const Dashboard = () => {
         {/* --- SECTION CENTRALE: PERFORMANCE & ACTIVITÉ --- */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
-          {/* Graphique de répartition */}
+          {/* Graphique de répartition des utilisateurs */}
           <div className="lg:col-span-2 bg-white rounded-2xl shadow-lg p-6">
             <div className="flex justify-between items-center mb-6">
               <div>
@@ -284,12 +354,14 @@ const Dashboard = () => {
                 </h2>
                 <p className="text-slate-400 text-sm mt-1">Visualisation des effectifs par rôle</p>
               </div>
-              <button className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
-                <RefreshCw size={18} className="text-slate-400" />
-              </button>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400 bg-slate-100 px-3 py-1 rounded-full">
+                  {stats.newThisWeek} nouveaux cette semaine
+                </span>
+              </div>
             </div>
 
-            {/* Graphique circulaire */}
+            {/* Graphique circulaire avec données réelles */}
             <div className="flex flex-col lg:flex-row items-center gap-8">
               <div className="relative w-48 h-48">
                 <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
@@ -297,21 +369,21 @@ const Dashboard = () => {
                   <circle 
                     cx="50" cy="50" r="45" fill="none" 
                     stroke="#3b82f6" strokeWidth="10" 
-                    strokeDasharray={`${(stats.apprenants / stats.totalUsers) * 283} 283`}
+                    strokeDasharray={`${(stats.apprenants / (stats.totalUsers || 1)) * 283} 283`}
                     strokeLinecap="round"
                   />
                   <circle 
                     cx="50" cy="50" r="45" fill="none" 
                     stroke="#f97316" strokeWidth="10" 
-                    strokeDasharray={`${(stats.formateurs / stats.totalUsers) * 283} 283`}
-                    strokeDashoffset={`-${(stats.apprenants / stats.totalUsers) * 283}`}
+                    strokeDasharray={`${(stats.formateurs / (stats.totalUsers || 1)) * 283} 283`}
+                    strokeDashoffset={`-${(stats.apprenants / (stats.totalUsers || 1)) * 283}`}
                     strokeLinecap="round"
                   />
                   <circle 
                     cx="50" cy="50" r="45" fill="none" 
                     stroke="#a855f7" strokeWidth="10" 
-                    strokeDasharray={`${(stats.admins / stats.totalUsers) * 283} 283`}
-                    strokeDashoffset={`-${((stats.apprenants + stats.formateurs) / stats.totalUsers) * 283}`}
+                    strokeDasharray={`${(stats.admins / (stats.totalUsers || 1)) * 283} 283`}
+                    strokeDashoffset={`-${((stats.apprenants + stats.formateurs) / (stats.totalUsers || 1)) * 283}`}
                     strokeLinecap="round"
                   />
                 </svg>
@@ -356,6 +428,16 @@ const Dashboard = () => {
                     </span>
                   </div>
                 </div>
+                <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
+                  <div className="flex items-center gap-3">
+                    <span className="w-3 h-3 bg-red-500 rounded-full"></span>
+                    <span className="text-sm font-medium text-slate-700">Inactifs</span>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className="text-lg font-bold text-slate-800">{stats.inactiveUsers}</span>
+                    <span className="text-xs text-red-600 font-semibold">{inactiveRate}%</span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -377,63 +459,114 @@ const Dashboard = () => {
             </div>
           </div>
 
-          {/* Notifications récentes */}
+          {/* Activité récente avec utilisateurs réels */}
           <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
             <div className="p-6 border-b border-slate-100">
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                     <Bell size={20} className="text-orange-500" />
-                    Activités récentes
+                    Nouveaux utilisateurs
                   </h2>
-                  <p className="text-slate-400 text-sm mt-1">Dernières actions sur la plateforme</p>
+                  <p className="text-slate-400 text-sm mt-1">Dernières inscriptions</p>
                 </div>
-                <span className="bg-rose-50 text-rose-600 text-xs font-bold px-3 py-1 rounded-full">
-                  {stats.newThisMonth} nouvelles
+                <span className="bg-emerald-50 text-emerald-600 text-xs font-bold px-3 py-1 rounded-full">
+                  +{stats.newThisMonth} ce mois
                 </span>
               </div>
             </div>
 
             <div className="p-6 space-y-4 max-h-[400px] overflow-y-auto">
-              {recentUsers.map((user, i) => {
-                const RoleIcon = getRoleBadge(user.role).icon;
-                return (
-                  <div key={i} className="group p-3 rounded-xl hover:bg-slate-50 transition-all cursor-pointer">
-                    <div className="flex items-center gap-3">
-                      <div className={`p-2 rounded-lg ${getRoleBadge(user.role).color}`}>
-                        <RoleIcon size={16} />
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-sm font-semibold text-slate-800">
-                          {user.prenom} {user.nom}
-                        </p>
-                        <p className="text-xs text-slate-400">{user.email}</p>
-                      </div>
-                      <div className="text-right">
-                        <span className={`text-xs px-2 py-1 rounded-full ${getRoleBadge(user.role).color}`}>
-                          {getRoleBadge(user.role).label}
-                        </span>
-                        <p className="text-[10px] text-slate-400 mt-1">
-                          {new Date(user.createdAt).toLocaleDateString()}
-                        </p>
+              {recentUsers.length > 0 ? (
+                recentUsers.map((user, i) => {
+                  const RoleIcon = getRoleBadge(user.role).icon;
+                  return (
+                    <div key={i} className="group p-3 rounded-xl hover:bg-slate-50 transition-all cursor-pointer">
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-lg ${getRoleBadge(user.role).color}`}>
+                          <RoleIcon size={16} />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold text-slate-800">
+                            {user.prenom} {user.nom}
+                          </p>
+                          <p className="text-xs text-slate-400">{user.email}</p>
+                        </div>
+                        <div className="text-right">
+                          <span className={`text-xs px-2 py-1 rounded-full ${getRoleBadge(user.role).color}`}>
+                            {getRoleBadge(user.role).label}
+                          </span>
+                          <p className="text-[10px] text-slate-400 mt-1">
+                            {new Date(user.createdAt).toLocaleDateString()}
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-              
-              {recentUsers.length === 0 && (
+                  );
+                })
+              ) : (
                 <div className="text-center py-8">
                   <Users size={40} className="mx-auto text-slate-300 mb-3" />
                   <p className="text-slate-400">Aucun utilisateur récent</p>
                 </div>
               )}
             </div>
-            
-            <div className="p-4 bg-slate-50 border-t border-slate-100">
-              <button className="w-full text-center text-sm font-semibold text-emerald-600 hover:text-emerald-700 transition-colors">
-                Voir tous les utilisateurs →
-              </button>
+          </div>
+        </div>
+
+        {/* --- STATISTIQUES SUPPLÉMENTAIRES AVEC DONNÉES RÉELLES --- */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-100">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-emerald-50 rounded-lg">
+                <TrendingUp size={18} className="text-emerald-500" />
+              </div>
+              <div>
+                <p className="text-xs text-slate-400">Croissance mensuelle</p>
+                <p className="text-lg font-bold text-slate-800">+{stats.newThisMonth}</p>
+                <p className="text-xs text-slate-400">nouveaux utilisateurs</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-100">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-50 rounded-lg">
+                <Activity size={18} className="text-blue-500" />
+              </div>
+              <div>
+                <p className="text-xs text-slate-400">Taux d'activité</p>
+                <p className="text-lg font-bold text-slate-800">{activityRate}%</p>
+                <p className="text-xs text-slate-400">{stats.activeUsers} actifs</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-100">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-purple-50 rounded-lg">
+                <Target size={18} className="text-purple-500" />
+              </div>
+              <div>
+                <p className="text-xs text-slate-400">Formations actives</p>
+                <p className="text-lg font-bold text-slate-800">{stats.activeFormations}</p>
+                <p className="text-xs text-slate-400">sur {stats.formationsCount} total</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-100">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-orange-50 rounded-lg">
+                <UserCheck size={18} className="text-orange-500" />
+              </div>
+              <div>
+                <p className="text-xs text-slate-400">Taux réussite</p>
+                <p className="text-lg font-bold text-slate-800">
+                  {stats.formationsCount > 0 ? Math.round((stats.completedFormations / stats.formationsCount) * 100) : 0}%
+                </p>
+                <p className="text-xs text-slate-400">formations complétées</p>
+              </div>
             </div>
           </div>
         </div>
@@ -496,7 +629,9 @@ const Dashboard = () => {
                   <Database size={16} className="text-emerald-500" />
                   <span className="text-sm font-medium text-slate-700">MongoDB</span>
                 </div>
-                <span className="text-xs text-emerald-600 font-semibold">Connecté</span>
+                <span className="text-xs text-emerald-600 font-semibold">
+                  {stats.totalUsers} utilisateurs
+                </span>
               </div>
               <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
                 <div className="flex items-center gap-3">
@@ -512,58 +647,18 @@ const Dashboard = () => {
                 </div>
                 <span className="text-xs text-emerald-600 font-semibold">Active</span>
               </div>
-            </div>
-          </div>
-        </div>
-
-        {/* --- STATISTIQUES SUPPLÉMENTAIRES --- */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-100">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-emerald-50 rounded-lg">
-                <TrendingUp size={18} className="text-emerald-500" />
-              </div>
-              <div>
-                <p className="text-xs text-slate-400">Croissance mensuelle</p>
-                <p className="text-lg font-bold text-slate-800">+{stats.newThisMonth}</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-100">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-50 rounded-lg">
-                <Activity size={18} className="text-blue-500" />
-              </div>
-              <div>
-                <p className="text-xs text-slate-400">Taux d'activité</p>
-                <p className="text-lg font-bold text-slate-800">{activityRate}%</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-100">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-purple-50 rounded-lg">
-                <Target size={18} className="text-purple-500" />
-              </div>
-              <div>
-                <p className="text-xs text-slate-400">Formations actives</p>
-                <p className="text-lg font-bold text-slate-800">{stats.activeFormations}</p>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-100">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-orange-50 rounded-lg">
-                <Award size={18} className="text-orange-500" />
-              </div>
-              <div>
-                <p className="text-xs text-slate-400">Taux complétion</p>
-                <p className="text-lg font-bold text-slate-800">78%</p>
+              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
+                <div className="flex items-center gap-3">
+                  <Shield size={16} className="text-green-500" />
+                  <span className="text-sm font-medium text-slate-700">Base de données</span>
+                </div>
+                <span className="text-xs text-emerald-600 font-semibold">
+                  {stats.formationsCount} formations
+                </span>
               </div>
             </div>
           </div>
         </div>
-        
       </div>
     </div>
   );

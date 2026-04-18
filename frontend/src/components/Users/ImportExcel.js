@@ -1,4 +1,4 @@
-// ImportExcel.js - Version qui enregistre dans MongoDB
+// ImportExcel.js - Version complète avec MongoDB (à placer dans components/Users/)
 import React, { useState, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -306,11 +306,11 @@ const ImportExcel = ({ onClose, onImportComplete }) => {
               {/* Boutons d'ajout rapide */}
               <div className="grid grid-cols-2 gap-4">
                 <button onClick={() => { setShowAddForm(true); setUserType('apprenant'); }} className="group flex flex-col items-center gap-2 p-4 bg-blue-50 border border-blue-100 rounded-2xl hover:bg-blue-600 hover:text-white transition-all">
-                  <UserPlus className="text-blue-600 group-hover:text-white" />
+                  <UserPlus className="text-blue-600 group-hover:text-white" size={24} />
                   <span className="font-bold text-sm uppercase">Nouvel Apprenant</span>
                 </button>
                 <button onClick={() => { setShowAddForm(true); setUserType('formateur'); }} className="group flex flex-col items-center gap-2 p-4 bg-amber-50 border border-amber-100 rounded-2xl hover:bg-amber-600 hover:text-white transition-all">
-                  <GraduationCap className="text-amber-600 group-hover:text-white" />
+                  <GraduationCap className="text-amber-600 group-hover:text-white" size={24} />
                   <span className="font-bold text-sm uppercase">Nouveau Formateur</span>
                 </button>
               </div>
@@ -323,12 +323,36 @@ const ImportExcel = ({ onClose, onImportComplete }) => {
                     <button onClick={() => setShowAddForm(false)} className="text-slate-400"><X size={18}/></button>
                   </div>
                   <div className="grid grid-cols-2 gap-4 mb-4">
-                    <input type="text" placeholder="Nom" className="modern-input" onChange={e => setNewUser({...newUser, nom: e.target.value})} />
-                    <input type="text" placeholder="Prénom" className="modern-input" onChange={e => setNewUser({...newUser, prenom: e.target.value})} />
+                    <input 
+                      type="text" 
+                      placeholder="Nom" 
+                      className="modern-input" 
+                      onChange={e => setNewUser({...newUser, nom: e.target.value})} 
+                    />
+                    <input 
+                      type="text" 
+                      placeholder="Prénom" 
+                      className="modern-input" 
+                      onChange={e => setNewUser({...newUser, prenom: e.target.value})} 
+                    />
                   </div>
-                  <input type="email" placeholder="Email" className="modern-input mb-4" onChange={e => setNewUser({...newUser, email: e.target.value})} />
-                  <input type="tel" placeholder="Téléphone (optionnel)" className="modern-input mb-4" onChange={e => setNewUser({...newUser, telephone: e.target.value})} />
-                  <button disabled={!newUser.nom || !newUser.prenom || !newUser.email} onClick={addSingleUser} className="w-full py-3 bg-emerald-600 text-white rounded-xl font-black hover:bg-emerald-700 disabled:opacity-30">
+                  <input 
+                    type="email" 
+                    placeholder="Email" 
+                    className="modern-input mb-4" 
+                    onChange={e => setNewUser({...newUser, email: e.target.value})} 
+                  />
+                  <input 
+                    type="tel" 
+                    placeholder="Téléphone (optionnel)" 
+                    className="modern-input mb-4" 
+                    onChange={e => setNewUser({...newUser, telephone: e.target.value})} 
+                  />
+                  <button 
+                    disabled={!newUser.nom || !newUser.prenom || !newUser.email} 
+                    onClick={addSingleUser} 
+                    className="w-full py-3 bg-emerald-600 text-white rounded-xl font-black hover:bg-emerald-700 disabled:opacity-30 transition-all"
+                  >
                     AJOUTER À MONGODB
                   </button>
                 </div>
@@ -338,7 +362,7 @@ const ImportExcel = ({ onClose, onImportComplete }) => {
               <div className="space-y-4">
                 <div className="flex justify-between items-center px-2">
                   <span className="text-xs font-black text-slate-400 uppercase">Importation Fichier Excel</span>
-                  <button onClick={downloadTemplate} className="text-xs font-bold text-indigo-600 flex items-center gap-1">
+                  <button onClick={downloadTemplate} className="text-xs font-bold text-indigo-600 flex items-center gap-1 hover:text-indigo-800 transition-colors">
                     <Download size={12} /> Télécharger Modèle
                   </button>
                 </div>
@@ -349,7 +373,7 @@ const ImportExcel = ({ onClose, onImportComplete }) => {
                     <>
                       <FileSpreadsheet size={48} className="text-emerald-600 mb-4" />
                       <p className="font-black text-emerald-800">{file.name}</p>
-                      <button onClick={(e) => { e.stopPropagation(); clearCurrentFile(); }} className="mt-4 text-xs text-red-500 flex items-center gap-1">
+                      <button onClick={(e) => { e.stopPropagation(); clearCurrentFile(); }} className="mt-4 text-xs text-red-500 flex items-center gap-1 hover:text-red-700">
                         <Trash2 size={14} /> Supprimer
                       </button>
                     </>
@@ -367,12 +391,15 @@ const ImportExcel = ({ onClose, onImportComplete }) => {
               {previewData.length > 0 && (
                 <div className="p-4 bg-slate-50 rounded-xl">
                   <p className="text-sm font-bold text-slate-700 mb-2">Aperçu ({previewData.length} lignes):</p>
-                  <div className="max-h-40 overflow-y-auto">
+                  <div className="max-h-40 overflow-y-auto space-y-1">
                     {previewData.slice(0, 5).map((item, idx) => (
                       <div key={idx} className="text-xs text-slate-600 py-1 border-b border-slate-200">
                         {item.nom} {item.prenom} - {item.email} - {item.role || 'apprenant'}
                       </div>
                     ))}
+                    {previewData.length > 5 && (
+                      <p className="text-xs text-slate-400 italic">... et {previewData.length - 5} autres</p>
+                    )}
                   </div>
                 </div>
               )}
@@ -392,7 +419,10 @@ const ImportExcel = ({ onClose, onImportComplete }) => {
                     <ShieldCheck size={18} />
                     <span className="text-xs font-black uppercase">{previewData.length} utilisateur(s) à importer dans MongoDB</span>
                   </div>
-                  <button onClick={() => executeImport(previewData)} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-lg hover:bg-indigo-600 transition-all">
+                  <button 
+                    onClick={() => executeImport(previewData)} 
+                    className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-lg hover:bg-indigo-600 transition-all transform hover:scale-105"
+                  >
                     Lancer l'importation vers MongoDB
                   </button>
                 </div>
@@ -400,7 +430,7 @@ const ImportExcel = ({ onClose, onImportComplete }) => {
 
               <div className="p-4 bg-slate-50 rounded-2xl flex gap-3">
                 <Info size={18} className="text-slate-400" />
-                <p className="text-[10px] text-slate-500 uppercase font-bold">
+                <p className="text-[10px] text-slate-500 uppercase font-bold leading-relaxed">
                   Les mots de passe sont générés automatiquement. Un fichier Excel avec les identifiants sera téléchargé.<br/>
                   <strong className="text-indigo-600">Note :</strong> Les données sont enregistrées dans MongoDB.
                 </p>
@@ -420,6 +450,7 @@ const ImportExcel = ({ onClose, onImportComplete }) => {
           font-size: 14px;
           font-weight: 600;
           outline: none;
+          transition: all 0.2s;
         }
         .modern-input:focus {
           border-color: #6366f1;
@@ -428,6 +459,7 @@ const ImportExcel = ({ onClose, onImportComplete }) => {
         .custom-scrollbar::-webkit-scrollbar { width: 5px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
       `}</style>
     </div>
   );

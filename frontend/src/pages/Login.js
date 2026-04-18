@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { login } from '../store/slices/authSlice';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 
 const Login = () => {
   const [matricule, setMatricule] = useState('');
@@ -12,13 +13,15 @@ const Login = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
+  const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
     setError('');
 
     try {
-      // 1. Vérifier d'abord dans localStorage (utilisateurs importés/existants)
+      // 1. Vérifier d'abord dans localStorage (fallback)
       const savedUsers = localStorage.getItem('users');
       const users = savedUsers ? JSON.parse(savedUsers) : [];
 
@@ -27,7 +30,15 @@ const Login = () => {
       );
 
       if (localUser) {
-        // Gestion utilisateur localStorage
+        // VÉRIFICATION CRITIQUE : Vérifier si le compte est actif dans localStorage
+        const isActive = localUser.status === 'actif' || localUser.status === 'active' || localUser.isActive === true || !localUser.status;
+        
+        if (!isActive) {
+          setError('❌ Votre compte est désactivé. Veuillez contacter un administrateur.');
+          setIsLoading(false);
+          return;
+        }
+
         let userRole = localUser.role;
         let redirectPath = '';
 
@@ -40,7 +51,6 @@ const Login = () => {
           redirectPath = '/apprenant';
         }
 
-        // Définir l'avatar selon le rôle
         let avatar = '👤';
         if (userRole === 'admin') avatar = '👑';
         else if (userRole === 'formateur') avatar = '🎓';
@@ -55,6 +65,7 @@ const Login = () => {
           fullName: `${localUser.prenom} ${localUser.nom}`,
           email: localUser.email || '',
           telephone: localUser.telephone || '',
+          status: localUser.status || 'actif',
           source: 'localstorage',
         };
 
@@ -69,21 +80,28 @@ const Login = () => {
       if (!result.error && result.payload) {
         const userData = result.payload.user;
         
-        // Utiliser le rôle réel de l'utilisateur depuis MongoDB
-        let userRole = userData.role; // 'apprenant', 'formateur', ou 'admin'
+        // VÉRIFICATION CRITIQUE : Vérifier le statut retourné par le serveur
+        const userStatus = userData.status || userData.isActive;
+        const isActive = userStatus === 'actif' || userStatus === 'active' || userStatus === true;
+        
+        if (!isActive) {
+          setError('❌ Votre compte est désactivé. Veuillez contacter un administrateur.');
+          setIsLoading(false);
+          return;
+        }
+        
+        let userRole = userData.role;
         let redirectPath = '';
         
-        // ✅ CORRECTION: Déterminer la redirection basée sur le rôle réel avec les bons chemins
         if (userRole === 'admin') {
           redirectPath = '/dashboard';
         } else if (userRole === 'formateur') {
           redirectPath = '/formateur';
         } else {
-          userRole = 'user'; // Normaliser pour l'UI
-          redirectPath = '/apprenant';  // ✅ Chemin correct avec slash
+          userRole = 'user';
+          redirectPath = '/apprenant';
         }
         
-        // Avatar basé sur le rôle réel
         let avatar = '👤';
         if (userRole === 'admin') avatar = '👑';
         else if (userRole === 'formateur') avatar = '🎓';
@@ -98,55 +116,60 @@ const Login = () => {
           fullName: `${userData.prenom || userData.nom} ${userData.nom}`,
           email: userData.email,
           telephone: userData.telephone,
+          status: userData.status || 'actif',
           source: 'mongodb',
         };
         
         localStorage.setItem('currentUser', JSON.stringify(userForStorage));
-        
-        // Stocker également le token si présent
         if (result.payload.token) {
           localStorage.setItem('token', result.payload.token);
         }
-        
-        // ✅ Rediriger vers le bon chemin
         navigate(redirectPath);
       } else {
         setError('Matricule ou mot de passe incorrect');
       }
     } catch (err) {
       console.error('Erreur de connexion:', err);
-      setError('Erreur de connexion au serveur');
+      // Gérer l'erreur 403 (compte désactivé)
+      if (err.response?.status === 403) {
+        setError('❌ Votre compte est désactivé. Veuillez contacter un administrateur.');
+      } else {
+        setError('Erreur de connexion au serveur');
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0f172a] relative overflow-hidden">
-      {/* Glow Effects */}
-      <div className="absolute w-[400px] h-[400px] bg-blue-500/20 blur-[120px] rounded-full top-[-100px] left-[-100px]" />
-      <div className="absolute w-[300px] h-[300px] bg-cyan-400/20 blur-[100px] rounded-full bottom-[-100px] right-[-100px]" />
-
-      {/* Card */}
-      <div className="relative z-10 w-[420px] p-8 rounded-3xl bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 relative overflow-hidden">
+      <div className="relative z-10 w-full max-w-[420px] p-8 rounded-3xl bg-white border border-gray-200 shadow-xl mx-4">
+        
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="w-20 h-20 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-            <span className="text-4xl">📱</span>
+          <div className="flex flex-col items-center gap-3">
+            <img 
+              src="../image/imag4.jpg" 
+              alt="Algérie Poste Logo" 
+              className="h-20 w-auto object-contain mb-2" 
+            />
+            <div className="flex flex-col">
+              <span className="font-black text-2xl tracking-tighter text-blue-900 leading-none uppercase">
+                Algérie Poste
+              </span>
+              <span className="text-xs uppercase tracking-[0.2em] font-bold text-yellow-500 mt-1">
+                Learning
+              </span>
+            </div>
           </div>
-
-          <h2 className="text-3xl font-bold text-white">
-            Messagerie Pro
-          </h2>
-
-          <p className="text-gray-300 mt-2 text-sm">
+          <p className="text-gray-500 mt-4 text-sm">
             Connectez-vous avec votre matricule
           </p>
         </div>
 
         {/* Error Message */}
         {error && (
-          <div className="bg-red-500/20 border border-red-400/30 text-red-300 px-4 py-3 rounded-xl mb-6 text-sm text-center">
+          <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl mb-6 text-sm text-center font-medium">
             {error}
           </div>
         )}
@@ -155,19 +178,16 @@ const Login = () => {
         <form onSubmit={handleSubmit} className="space-y-5">
           {/* Matricule Field */}
           <div>
-            <label className="block text-gray-300 text-sm mb-2">
+            <label className="block text-gray-700 text-sm font-semibold mb-2">
               Matricule
             </label>
-
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">👤</span>
-
               <input
                 type="text"
                 value={matricule}
                 onChange={(e) => setMatricule(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-gray-400 focus:ring-2 focus:ring-cyan-400 outline-none transition"
-                placeholder="Ex: ADMIN001, A20263792, F20261824"
+                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all"
+                placeholder="Entrez votre matricule"
                 required
               />
             </div>
@@ -175,18 +195,15 @@ const Login = () => {
 
           {/* Password Field */}
           <div>
-            <label className="block text-gray-300 text-sm mb-2">
+            <label className="block text-gray-700 text-sm font-semibold mb-2">
               Mot de passe
             </label>
-
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔒</span>
-
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-gray-400 focus:ring-2 focus:ring-cyan-400 outline-none transition"
+                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all"
                 placeholder="Entrez votre mot de passe"
                 required
               />
@@ -197,7 +214,7 @@ const Login = () => {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full py-3 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-semibold shadow-lg hover:scale-105 transition-transform duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-lg shadow-blue-200 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed mt-2"
           >
             {isLoading ? (
               <span className="flex items-center justify-center gap-2">
@@ -214,9 +231,9 @@ const Login = () => {
         </form>
 
         {/* Footer */}
-        <div className="mt-6 text-center">
+        <div className="mt-8 text-center border-t border-gray-100 pt-6">
           <p className="text-xs text-gray-400">
-            Contactez l'administrateur pour obtenir vos identifiants
+            © {new Date().getFullYear()} Algérie Poste - Plateforme de formation
           </p>
         </div>
       </div>
