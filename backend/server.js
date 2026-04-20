@@ -11,7 +11,8 @@ const XLSX = require('xlsx');
 dotenv.config();
 
 const app = express();
-
+// ============ ROUTES ============
+const cahierSuiviRoutes = require('./routes/cahierSuiviRoutes');
 // ============ MIDDLEWARES ============
 app.use(cors({
   origin: ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:5173'],
@@ -72,6 +73,52 @@ const formationSchema = new mongoose.Schema({
   formateurId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   createdAt: { type: Date, default: Date.now }
 });
+
+// Modèle Inscription
+const inscriptionSchema = new mongoose.Schema(
+  {
+    apprenantId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    formationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Formation",
+      required: true,
+    },
+    formationTitre: { type: String, required: true },
+    formationDomaine: { type: String, required: true },
+    statut: {
+      type: String,
+      enum: ["en_attente", "confirmee", "refusee", "annulee"],
+      default: "en_attente",
+    },
+    demandeEnvoyeeLe: { type: Date, default: Date.now },
+    reponseLe: { type: Date },
+    messageApprenant: { type: String, default: "" },
+    messageAdmin: { type: String, default: "" },
+  },
+  { timestamps: true },
+);
+const Inscription = mongoose.model('Inscription', inscriptionSchema);
+
+const notificationSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  type: {
+    type: String,
+    enum: ["message", "call", "inscription", "system"],
+    default: "system",
+  },
+  title: { type: String, required: true },
+  message: { type: String, required: true },
+  data: { type: mongoose.Schema.Types.Mixed, default: {} },
+  read: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now },
+});
+
+const Notification = mongoose.model("Notification", notificationSchema);
+
 
 const Formation = mongoose.model('Formation', formationSchema);
 
@@ -399,6 +446,164 @@ const checkAccountStatus = async (req, res, next) => {
     });
   }
 };
+// ============ ROUTES PROFIL UTILISATEUR ============
+// Ces routes doivent être PLACÉES AVANT app.get('/api/users/:id')
+
+// GET - Récupérer son propre profil
+app.get('/api/users/profile', authMiddleware, async (req, res) => {
+  try {
+    console.log('👤 Récupération profil utilisateur:', req.userId);
+    
+    const user = await User.findById(req.userId).select('-password');
+    
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Utilisateur non trouvé' 
+      });
+    }
+    
+    const formattedUser = {
+      id: user._id,
+      _id: user._id,
+      nom: user.nom,
+      prenom: user.prenom,
+      matricule: user.matricule,
+      email: user.email,
+      telephone: user.telephone,
+      role: user.role,
+      status: user.status || (user.isActive ? 'actif' : 'inactif'),
+      isActive: user.isActive,
+      dateNaissance: user.dateNaissance,
+      sexe: user.sexe,
+      adresse: user.adresse,
+      avatar: user.avatar,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt
+    };
+    
+    res.json({ success: true, data: formattedUser });
+    
+  } catch (error) {
+    console.error('❌ Erreur:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// PUT - Mettre à jour son propre profil
+app.put('/api/users/profile', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.userId;
+    const updateData = req.body;
+    
+    console.log('✏️ Mise à jour profil:', userId);
+    
+    // Empêcher la modification de champs sensibles
+    delete updateData.password;
+    delete updateData.matricule;
+    delete updateData._id;
+    delete updateData.id;
+    delete updateData.role;
+    delete updateData.isActive;
+    delete updateData.createdAt;
+    
+    updateData.updatedAt = new Date();
+    
+    if (updateData.dateNaissance === '') {
+      updateData.dateNaissance = null;
+    }
+    
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { $set: updateData },
+      { new: true, runValidators: true }
+    ).select('-password');
+    
+    if (!updatedUser) {
+      return res.status(404).json({ success: false, message: 'Utilisateur non trouvé' });
+    }
+    
+    const formattedUser = {
+      id: updatedUser._id,
+      _id: updatedUser._id,
+      nom: updatedUser.nom,
+      prenom: updatedUser.prenom,
+      matricule: updatedUser.matricule,
+      email: updatedUser.email,
+      telephone: updatedUser.telephone,
+      role: updatedUser.role,
+      status: updatedUser.status || (updatedUser.isActive ? 'actif' : 'inactif'),
+      isActive: updatedUser.isActive,
+      dateNaissance: updatedUser.dateNaissance,
+      sexe: updatedUser.sexe,
+      adresse: updatedUser.adresse,
+      avatar: updatedUser.avatar,
+      createdAt: updatedUser.createdAt,
+      updatedAt: updatedUser.updatedAt
+    };
+    
+    res.json({ 
+      success: true, 
+      message: 'Profil mis à jour avec succès',
+      data: formattedUser 
+    });
+    
+  } catch (error) {
+    console.error('❌ Erreur:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ============ ROUTES UTILISATEURS (avec paramètre ID) ============
+// Ces routes viennent APRÈS les routes /profile
+
+// Récupérer un utilisateur par ID
+app.get('/api/users/:id', authMiddleware, async (req, res) => {
+  try {
+    // Vérifier que l'ID est valide
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'ID invalide' });
+    }
+    
+    const user = await User.findById(req.params.id).select('-password');
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Utilisateur non trouvé' });
+    }
+    res.json({ success: true, data: user });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Mettre à jour un utilisateur par ID
+app.put('/api/users/:id', authMiddleware, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'ID invalide' });
+    }
+    
+    const updateData = req.body;
+    delete updateData.password;
+    delete updateData.matricule;
+    delete updateData._id;
+    
+    updateData.updatedAt = new Date();
+    
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      updateData,
+      { new: true, runValidators: true }
+    ).select('-password');
+    
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Utilisateur non trouvé' });
+    }
+    
+    res.json({ success: true, data: user, message: 'Utilisateur mis à jour' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
 
 // Appliquer ce middleware aux routes protégées
 // Exemple: app.use('/api/users', authMiddleware, checkAccountStatus, adminMiddleware, ...)
@@ -992,7 +1197,197 @@ app.get('/api/formations', async (req, res) => {
     });
   }
 });
+// POST - S'inscrire à une formation (apprenant)
+app.post("/api/formations/inscrire", authMiddleware, async (req, res) => {
+  try {
+    const { formationId, formationTitre, formationDomaine, message } = req.body;
+    const apprenantId = req.userId;
+    const apprenantRole = req.userRole;
 
+    console.log("📝 Demande d'inscription reçue:", {
+      formationId,
+      apprenantId,
+      apprenantRole,
+    });
+
+    // Vérifier que l'utilisateur est un apprenant
+    if (apprenantRole !== "apprenant") {
+      return res.status(403).json({
+        success: false,
+        message: "Seuls les apprenants peuvent s'inscrire aux formations",
+      });
+    }
+
+    // Vérifier si la formation existe
+    const formation = await Formation.findById(formationId);
+    if (!formation) {
+      return res.status(404).json({
+        success: false,
+        message: "Formation non trouvée",
+      });
+    }
+
+    // Vérifier si une inscription existe déjà
+    const existingInscription = await Inscription.findOne({
+      apprenantId,
+      formationId,
+      statut: { $in: ["en_attente", "confirmee"] },
+    });
+
+    if (existingInscription) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Vous avez déjà une demande d'inscription pour cette formation",
+      });
+    }
+
+    // Créer la demande d'inscription
+    const inscription = new Inscription({
+      apprenantId,
+      formationId,
+      formationTitre: formationTitre || formation.titre,
+      formationDomaine: formationDomaine || formation.domaine,
+      messageApprenant: message || "",
+      statut: "en_attente",
+      demandeEnvoyeeLe: new Date(),
+    });
+
+    await inscription.save();
+
+    // Récupérer les admins pour leur envoyer une notification
+    const admins = await User.find({ role: "admin" });
+    const apprenant = await User.findById(apprenantId);
+    const apprenantNom = `${apprenant.prenom} ${apprenant.nom}`;
+
+    // Créer des notifications pour chaque admin
+    for (const admin of admins) {
+      await Notification.create({
+        userId: admin._id,
+        type: "inscription",
+        title: "Nouvelle demande d'inscription",
+        message: `${apprenantNom} souhaite s'inscrire à la formation "${formation.titre}"`,
+        data: {
+          inscriptionId: inscription._id,
+          apprenantId: apprenantId,
+          apprenantNom: apprenantNom,
+          formationId: formationId,
+          formationTitre: formation.titre,
+        },
+        read: false,
+      });
+    }
+
+    res.status(201).json({
+      success: true,
+      message: "Votre demande d'inscription a été envoyée à l'administrateur",
+      data: inscription,
+    });
+  } catch (error) {
+    console.error("Erreur inscription:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+// GET - Obtenir mes inscriptions (apprenant)
+app.get(
+  "/api/formations/mes-inscriptions",
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const inscriptions = await Inscription.find({
+        apprenantId: req.userId,
+      }).sort({ demandeEnvoyeeLe: -1 });
+
+      res.json({
+        success: true,
+        data: inscriptions,
+      });
+    } catch (error) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  },
+);
+app.get(
+  "/api/formations/admin/inscriptions",
+  authMiddleware,
+  adminMiddleware,
+  async (req, res) => {
+    try {
+      const inscriptions = await Inscription.find()
+        .sort({ demandeEnvoyeeLe: -1 })
+        .populate("apprenantId", "nom prenom matricule email");
+
+      res.json({
+        success: true,
+        data: inscriptions,
+      });
+    } catch (error) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  },
+);
+app.put(
+  "/api/formations/inscription/:id/repondre",
+  authMiddleware,
+  adminMiddleware,
+  async (req, res) => {
+    try {
+      const { statut, message } = req.body;
+      const inscriptionId = req.params.id;
+
+      if (!["confirmee", "refusee"].includes(statut)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Statut invalide. Utilisez "confirmee" ou "refusee"',
+        });
+      }
+
+      const inscription = await Inscription.findById(inscriptionId);
+      if (!inscription) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Inscription non trouvée" });
+      }
+
+      inscription.statut = statut;
+      inscription.messageAdmin = message || "";
+      inscription.reponseLe = new Date();
+      await inscription.save();
+
+      // Notifier l'apprenant
+      const notificationMessage =
+        statut === "confirmee"
+          ? `✅ Votre inscription à "${inscription.formationTitre}" a été acceptée !`
+          : `❌ Votre inscription à "${inscription.formationTitre}" a été refusée.`;
+
+      await Notification.create({
+        userId: inscription.apprenantId,
+        type: "inscription",
+        title:
+          statut === "confirmee"
+            ? "✅ Inscription acceptée"
+            : "❌ Inscription refusée",
+        message: notificationMessage,
+        data: {
+          inscriptionId: inscription._id,
+          formationTitre: inscription.formationTitre,
+          statut: statut,
+          messageAdmin: message,
+        },
+        read: false,
+      });
+
+      res.json({
+        success: true,
+        message: `Inscription ${statut === "confirmee" ? "acceptée" : "refusée"}`,
+        data: inscription,
+      });
+    } catch (error) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  },
+);
+app.use("/api/cahier-suivi", authMiddleware, cahierSuiviRoutes);
 // ============ DÉMARRAGE DU SERVEUR ============
 
 const PORT = process.env.PORT || 5000;

@@ -1,468 +1,672 @@
-// src/pages/ApprenantFormations.js
-import React, { useState, useEffect } from 'react';
-import { 
-  Search, Calendar, MapPin, Users, Clock, 
-  BookOpen, Star, ChevronRight, Award, Target, Briefcase,
-  CheckCircle, X, ChevronLeft, ChevronRight as ChevronRightIcon,
-  Layers, Sparkles, Heart, Filter, GraduationCap, AlertCircle
-} from 'lucide-react';
+// frontend/src/pages/ApprenantFormations.js
+import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { useSelector } from "react-redux";
+import {
+  BookOpen,
+  Search,
+  Clock,
+  Users,
+  Play,
+  FileText,
+  ChevronLeft,
+  CheckCircle,
+  XCircle,
+  Loader2,
+  Clock as ClockIcon,
+  Send,
+  RefreshCw,
+} from "lucide-react";
 
 const ApprenantFormations = () => {
+  const navigate = useNavigate();
+  const { user, isAuthenticated } = useSelector((state) => state.auth);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterType, setFilterType] = useState("all");
   const [formations, setFormations] = useState([]);
-  const [filteredFormations, setFilteredFormations] = useState([]);
+  const [mesInscriptions, setMesInscriptions] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedDomaine, setSelectedDomaine] = useState('all');
-  const [showDetails, setShowDetails] = useState(null);
-  const [currentPage, setCurrentPage] = useState(1);
   const [error, setError] = useState(null);
-  const itemsPerPage = 6;
+  const [inscriptionLoading, setInscriptionLoading] = useState(null);
+  const [showInscriptionModal, setShowInscriptionModal] = useState(null);
+  const [inscriptionMessage, setInscriptionMessage] = useState("");
+  const [inscriptionStatus, setInscriptionStatus] = useState(null);
 
-  // Données par défaut (fallback) - Formations Algérie Poste
-  const defaultFormations = [
-    {
-      _id: '1',
-      titre: 'Agent des Services Postaux',
-      description: 'Formation complète pour maîtriser l\'accueil client, la gestion du courrier et les opérations postales.',
-      domaine: 'Services Postaux',
-      duree: '6 mois (3 mois théorie + 3 mois stage pratique)',
-      prerequis: 'Baccalauréat toutes séries confondues',
-      debouches: 'Agent postal, Chef de bureau postal, Responsable clientèle, Superviseur d\'agence',
-      wilayas: ['Alger', 'Oran', 'Constantine', 'Annaba', 'Sétif', 'Tizi Ouzou', 'Blida', 'Béjaïa'],
-      placesDisponibles: 120,
-      dateDebut: '2026-01-15',
-      statut: 'actif',
-      tags: ['services postaux', 'agent', 'clientèle'],
-      objectifs: [
-        'Maîtriser l\'accueil client',
-        'Gérer le courrier et les colis',
-        'Utiliser les outils postaux',
-        'Assurer la relation client'
-      ],
-      contenu: [
-        'Module 1: Introduction aux services postaux',
-        'Module 2: Gestion du courrier',
-        'Module 3: Accueil et relation client',
-        'Module 4: Opérations postales',
-        'Module 5: Stage pratique'
-      ]
-    },
-    {
-      _id: '2',
-      titre: 'Technicien en Monétique',
-      description: 'Formation spécialisée dans la maintenance des automates bancaires, le support technique et la sécurisation des transactions.',
-      domaine: 'Monétique & IT',
-      duree: '8 mois (4 mois théorie + 4 mois stage)',
-      prerequis: 'Bac+2 en informatique, électronique ou télécommunications',
-      debouches: 'Technicien maintenance DAB, Support IT, Administrateur systèmes, Technicien réseau',
-      wilayas: ['Alger', 'Oran', 'Constantine', 'Annaba'],
-      placesDisponibles: 60,
-      dateDebut: '2026-02-01',
-      statut: 'actif',
-      tags: ['monétique', 'technicien', 'maintenance', 'DAB'],
-      objectifs: [
-        'Maintenir les automates bancaires',
-        'Assurer le support technique',
-        'Sécuriser les transactions',
-        'Gérer les incidents'
-      ],
-      contenu: [
-        'Module 1: Architecture des DAB',
-        'Module 2: Maintenance préventive',
-        'Module 3: Support technique',
-        'Module 4: Sécurité des transactions',
-        'Module 5: Stage pratique'
-      ]
-    },
-    {
-      _id: '3',
-      titre: 'Conseiller Financier',
-      description: 'Maîtrise des opérations CCP, épargne postale, produits financiers et conseil client.',
-      domaine: 'Gestion Financière',
-      duree: '6 mois (3 mois théorie + 3 mois stage)',
-      prerequis: 'Bac+2 en finance, comptabilité ou gestion',
-      debouches: 'Conseiller financier, Analyste crédit, Gestionnaire de patrimoine, Chargé clientèle',
-      wilayas: ['Alger', 'Oran', 'Constantine', 'Annaba', 'Sétif', 'Blida'],
-      placesDisponibles: 90,
-      dateDebut: '2026-03-01',
-      statut: 'actif',
-      tags: ['finance', 'conseiller', 'CCP', 'épargne'],
-      objectifs: [
-        'Maîtriser les opérations CCP',
-        'Gérer l\'épargne postale',
-        'Conseiller les clients',
-        'Analyser les produits financiers'
-      ],
-      contenu: [
-        'Module 1: Opérations CCP',
-        'Module 2: Produits d\'épargne',
-        'Module 3: Conseil client',
-        'Module 4: Analyse financière',
-        'Module 5: Stage pratique'
-      ]
-    },
-    {
-      _id: '4',
-      titre: 'Manager de Projet Digital',
-      description: 'Formation aux méthodes agiles, gestion de projets digitaux et transformation numérique.',
-      domaine: 'Monétique & IT',
-      duree: '4 mois (2 mois théorie + 2 mois stage)',
-      prerequis: 'Bac+3 en management ou informatique',
-      debouches: 'Chef de projet digital, Product Owner, Scrum Master',
-      wilayas: ['Alger', 'Oran'],
-      placesDisponibles: 40,
-      dateDebut: '2026-04-01',
-      statut: 'actif',
-      tags: ['digital', 'agile', 'projet', 'management'],
-      objectifs: [
-        'Maîtriser les méthodes agiles',
-        'Gérer des projets digitaux',
-        'Piloter la transformation numérique',
-        'Manager des équipes projet'
-      ],
-      contenu: [
-        'Module 1: Méthodes agiles',
-        'Module 2: Gestion de projet digital',
-        'Module 3: Transformation numérique',
-        'Module 4: Management d\'équipe',
-        'Module 5: Stage pratique'
-      ]
-    }
-  ];
-
-  // Récupérer les formations
+  // Récupérer les formations et les inscriptions de l'apprenant
   useEffect(() => {
-    fetchFormations();
+    Promise.all([fetchFormations(), fetchMesInscriptions()]).then(() => {
+      setLoading(false);
+    });
   }, []);
 
   const fetchFormations = async () => {
-    setLoading(true);
-    setError(null);
-    
     try {
-      console.log('🔄 Tentative de chargement des formations...');
-      
-      const token = localStorage.getItem('token');
-      console.log('Token présent:', !!token);
-      
-      const response = await fetch('http://localhost:5000/api/formations', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token && { 'Authorization': `Bearer ${token}` })
-        }
+      const response = await fetch("http://localhost:5000/api/formations", {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
       });
-      
-      console.log('Status réponse:', response.status);
-      
+
       if (response.ok) {
         const data = await response.json();
-        console.log('Données reçues:', data);
-        
-        if (data.success && data.data && data.data.length > 0) {
-          const activeFormations = data.data.filter(f => f.statut === 'actif');
-          console.log(`${activeFormations.length} formations actives trouvées`);
-          setFormations(activeFormations);
-          setFilteredFormations(activeFormations);
+        if (data.success && data.data) {
+          const formattedFormations = data.data.map((formation, index) => ({
+            id: formation._id || index,
+            titre: formation.titre,
+            categorie: formation.domaine || "Général",
+            duree: formation.duree
+              ? `${formation.duree} mois`
+              : "Non spécifiée",
+            inscrits: 0,
+            progression: 0,
+            statut: "available",
+            description: formation.description,
+            placesDisponibles: formation.placesDisponibles || 0,
+          }));
+          setFormations(formattedFormations);
         } else {
-          console.log('Aucune donnée de l\'API, utilisation des données par défaut');
-          setFormations(defaultFormations);
-          setFilteredFormations(defaultFormations);
+          setFormations([]);
         }
       } else {
-        console.log('Erreur API, utilisation des données par défaut');
-        setFormations(defaultFormations);
-        setFilteredFormations(defaultFormations);
+        setError("Impossible de charger les formations");
+        setFormations([]);
       }
     } catch (error) {
-      console.error('Erreur chargement:', error);
-      setError('Erreur de connexion au serveur. Affichage des formations par défaut.');
-      setFormations(defaultFormations);
-      setFilteredFormations(defaultFormations);
-    } finally {
-      setLoading(false);
+      console.error("Erreur chargement formations:", error);
+      setError("Erreur de connexion au serveur");
+      setFormations([]);
     }
   };
 
-  // Filtrer les formations
-  useEffect(() => {
-    let filtered = formations;
-    
+  const fetchMesInscriptions = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(
+        "http://localhost:5000/api/formations/mes-inscriptions",
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.data) {
+          setMesInscriptions(data.data);
+        }
+      }
+    } catch (error) {
+      console.error("Erreur chargement inscriptions:", error);
+    }
+  };
+
+  const handleBack = () => {
+    navigate("/apprenant");
+  };
+
+  // Vérifier le statut d'une formation
+  const getFormationStatus = (formationId) => {
+    const inscription = mesInscriptions.find(
+      (insc) => insc.formationId === formationId,
+    );
+    if (inscription) {
+      return inscription.statut;
+    }
+    return null;
+  };
+
+  const hasDemandeEnCours = (formationId) => {
+    return mesInscriptions.some(
+      (insc) =>
+        insc.formationId === formationId && insc.statut === "en_attente",
+    );
+  };
+
+  const hasDemandeAcceptee = (formationId) => {
+    return mesInscriptions.some(
+      (insc) => insc.formationId === formationId && insc.statut === "confirmee",
+    );
+  };
+
+  const hasDemandeRefusee = (formationId) => {
+    return mesInscriptions.some(
+      (insc) => insc.formationId === formationId && insc.statut === "refusee",
+    );
+  };
+
+  // Nouvelle fonction pour re-demander une formation refusée
+  const handleReinscrire = async (formation) => {
+    setInscriptionLoading(formation.id);
+    setInscriptionMessage("");
+
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(
+        "http://localhost:5000/api/formations/inscrire",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            formationId: formation.id,
+            formationTitre: formation.titre,
+            formationDomaine: formation.categorie,
+            message: "",
+          }),
+        },
+      );
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        setInscriptionStatus({ success: true, message: data.message });
+        await fetchMesInscriptions();
+        setTimeout(() => {
+          setInscriptionStatus(null);
+        }, 2000);
+      } else {
+        setInscriptionStatus({
+          success: false,
+          message: data.message || "Erreur lors de l'inscription",
+        });
+      }
+    } catch (error) {
+      console.error("Erreur inscription:", error);
+      setInscriptionStatus({
+        success: false,
+        message: "Erreur de connexion au serveur",
+      });
+    } finally {
+      setInscriptionLoading(null);
+    }
+  };
+
+  // Filtrer les formations selon l'onglet sélectionné
+  const getFilteredFormations = () => {
+    let filtered = [...formations];
+
+    switch (filterType) {
+      case "available":
+        // Uniquement les formations disponibles (sans demande en cours et sans acceptation)
+        // Les formations refusées réapparaissent ici !
+        filtered = filtered.filter(
+          (formation) =>
+            !hasDemandeAcceptee(formation.id) &&
+            !hasDemandeEnCours(formation.id),
+        );
+        break;
+      case "mes_demandes":
+        // Uniquement les formations avec demande en attente
+        filtered = filtered.filter((formation) =>
+          hasDemandeEnCours(formation.id),
+        );
+        break;
+      case "refusees":
+        // Uniquement les formations refusées
+        filtered = filtered.filter((formation) =>
+          hasDemandeRefusee(formation.id),
+        );
+        break;
+      case "all":
+      default:
+        // Toutes les formations (sauf celles acceptées)
+        filtered = filtered.filter(
+          (formation) => !hasDemandeAcceptee(formation.id),
+        );
+        break;
+    }
+
+    // Appliquer la recherche
     if (searchTerm) {
-      filtered = filtered.filter(f => 
-        f.titre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        f.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        f.domaine?.toLowerCase().includes(searchTerm.toLowerCase())
+      filtered = filtered.filter(
+        (formation) =>
+          formation.titre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          formation.categorie?.toLowerCase().includes(searchTerm.toLowerCase()),
       );
     }
-    
-    if (selectedDomaine !== 'all') {
-      filtered = filtered.filter(f => f.domaine === selectedDomaine);
+
+    return filtered;
+  };
+
+  const handleInscription = async (formation) => {
+    setInscriptionLoading(formation.id);
+
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(
+        "http://localhost:5000/api/formations/inscrire",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            formationId: formation.id,
+            formationTitre: formation.titre,
+            formationDomaine: formation.categorie,
+            message: inscriptionMessage,
+          }),
+        },
+      );
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        setInscriptionStatus({ success: true, message: data.message });
+        await fetchMesInscriptions();
+        setTimeout(() => {
+          setShowInscriptionModal(null);
+          setInscriptionStatus(null);
+          setInscriptionMessage("");
+        }, 2000);
+      } else {
+        setInscriptionStatus({
+          success: false,
+          message: data.message || "Erreur lors de l'inscription",
+        });
+      }
+    } catch (error) {
+      console.error("Erreur inscription:", error);
+      setInscriptionStatus({
+        success: false,
+        message: "Erreur de connexion au serveur",
+      });
+    } finally {
+      setInscriptionLoading(null);
     }
-    
-    setFilteredFormations(filtered);
-    setCurrentPage(1);
-  }, [searchTerm, selectedDomaine, formations]);
-
-  const totalPages = Math.ceil(filteredFormations.length / itemsPerPage);
-  const paginatedFormations = filteredFormations.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
-
-  const domaines = [...new Set(formations.map(f => f.domaine).filter(Boolean))];
-
-  const getDomaineIcon = (domaine) => {
-    const icons = {
-      'Services Postaux': '📮',
-      'Monétique & IT': '💻',
-      'Gestion Financière': '💰'
-    };
-    return icons[domaine] || '📚';
   };
 
-  const getDomaineColor = (domaine) => {
-    const colors = {
-      'Services Postaux': 'bg-blue-100 text-blue-700',
-      'Monétique & IT': 'bg-purple-100 text-purple-700',
-      'Gestion Financière': 'bg-emerald-100 text-emerald-700'
-    };
-    return colors[domaine] || 'bg-gray-100 text-gray-700';
+  const filteredFormations = getFilteredFormations();
+
+  const getStatutBadge = (formationId, statut) => {
+    if (hasDemandeEnCours(formationId)) {
+      return (
+        <span className="inline-flex items-center gap-1 text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">
+          <ClockIcon size={12} /> Demande envoyée
+        </span>
+      );
+    }
+    if (hasDemandeRefusee(formationId)) {
+      return (
+        <span className="inline-flex items-center gap-1 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+          <XCircle size={12} /> Refusée
+        </span>
+      );
+    }
+    switch (statut) {
+      case "ongoing":
+        return (
+          <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
+            En cours
+          </span>
+        );
+      case "available":
+        return (
+          <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+            Disponible
+          </span>
+        );
+      case "completed":
+        return (
+          <span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full">
+            Terminée
+          </span>
+        );
+      default:
+        return (
+          <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+            Disponible
+          </span>
+        );
+    }
   };
+
+  const getActionButton = (formation) => {
+    if (hasDemandeEnCours(formation.id)) {
+      return (
+        <div className="flex items-center gap-2 text-sm text-yellow-600">
+          <ClockIcon size={14} className="animate-pulse" />
+          <span>En attente de validation</span>
+        </div>
+      );
+    }
+
+    if (hasDemandeRefusee(formation.id)) {
+      return (
+        <button
+          onClick={() => handleReinscrire(formation)}
+          disabled={inscriptionLoading === formation.id}
+          className="flex items-center gap-1 text-sm text-orange-600 hover:text-orange-700 font-medium"
+        >
+          {inscriptionLoading === formation.id ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <>
+              <RefreshCw size={14} /> Renvoyer la demande
+            </>
+          )}
+        </button>
+      );
+    }
+
+    if (formation.statut === "ongoing") {
+      return (
+        <button className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 font-medium">
+          <Play size={14} /> Continuer
+        </button>
+      );
+    } else if (formation.statut === "available") {
+      return (
+        <button
+          onClick={() => setShowInscriptionModal(formation)}
+          disabled={inscriptionLoading === formation.id}
+          className="flex items-center gap-1 text-sm text-emerald-600 hover:text-emerald-700 font-medium disabled:opacity-50"
+        >
+          {inscriptionLoading === formation.id ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            "S'inscrire"
+          )}
+        </button>
+      );
+    } else {
+      return (
+        <button className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-600 font-medium">
+          <FileText size={14} /> Revoir
+        </button>
+      );
+    }
+  };
+
+  // Compter les demandes en attente et refusées
+  const demandesEnAttente = mesInscriptions.filter(
+    (i) => i.statut === "en_attente",
+  ).length;
+  const demandesRefusees = mesInscriptions.filter(
+    (i) => i.statut === "refusee",
+  ).length;
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-4 border-[#0055a2] border-t-transparent mx-auto mb-4"></div>
-          <p className="text-slate-500">Chargement des formations...</p>
-        </div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
-      
-      {/* Header */}
-      <div className="bg-gradient-to-r from-[#0055a2] to-[#0077e6] py-12 px-4">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center">
-            <h1 className="text-3xl lg:text-4xl font-bold text-white mb-4">
-              📚 Catalogue des formations
-            </h1>
-            <p className="text-white/80 text-lg">
-              Découvrez toutes nos formations certifiantes
+    <div className="min-h-screen bg-gray-50">
+      <div className="bg-white border-b border-gray-200 px-6 py-4 shadow-sm sticky top-0 z-10">
+        <div className="flex items-center gap-4">
+          <button
+            onClick={handleBack}
+            className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <ChevronLeft size={20} />
+          </button>
+          <h1 className="text-xl font-bold text-gray-800">
+            Catalogue de formations
+          </h1>
+        </div>
+      </div>
+
+      <main className="p-6">
+        {/* Barre de recherche */}
+        <div className="mb-6">
+          <div className="relative max-w-md">
+            <Search className="h-5 w-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Rechercher par titre, catégorie..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            />
+          </div>
+        </div>
+
+        {error && (
+          <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-700 text-sm">
+            ⚠️ {error}
+          </div>
+        )}
+
+        {/* Filtres */}
+        <div className="flex flex-wrap gap-3 mb-6">
+          <button
+            onClick={() => setFilterType("all")}
+            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+              filterType === "all"
+                ? "text-white"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}
+            style={{ backgroundColor: filterType === "all" ? "#2b5ea7" : "" }}
+          >
+            Toutes
+          </button>
+          <button
+            onClick={() => setFilterType("available")}
+            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+              filterType === "available"
+                ? "text-white"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}
+            style={{
+              backgroundColor: filterType === "available" ? "#2b5ea7" : "",
+            }}
+          >
+            Disponibles
+          </button>
+          <button
+            onClick={() => setFilterType("mes_demandes")}
+            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors flex items-center gap-1 ${
+              filterType === "mes_demandes"
+                ? "text-white"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}
+            style={{
+              backgroundColor: filterType === "mes_demandes" ? "#2b5ea7" : "",
+            }}
+          >
+            <Send size={14} />
+            Mes demandes
+            {demandesEnAttente > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 text-xs bg-white/20 rounded-full">
+                {demandesEnAttente}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setFilterType("refusees")}
+            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors flex items-center gap-1 ${
+              filterType === "refusees"
+                ? "text-white"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}
+            style={{
+              backgroundColor: filterType === "refusees" ? "#ef4444" : "",
+            }}
+          >
+            <XCircle size={14} />
+            Refusées
+            {demandesRefusees > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 text-xs bg-white/20 rounded-full">
+                {demandesRefusees}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Grille des formations */}
+        {filteredFormations.length === 0 ? (
+          <div className="text-center py-12">
+            <BookOpen className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+            <p className="text-gray-400">
+              {filterType === "mes_demandes"
+                ? "Aucune demande en attente"
+                : filterType === "available"
+                  ? "Aucune formation disponible pour le moment"
+                  : filterType === "refusees"
+                    ? "Aucune demande refusée"
+                    : "Aucune formation trouvée"}
             </p>
           </div>
-          
-          {/* Barre de recherche */}
-          <div className="max-w-2xl mx-auto mt-8">
-            <div className="relative">
-              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400" size={20} />
-              <input
-                type="text"
-                placeholder="Rechercher une formation..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-12 pr-4 py-3 rounded-xl bg-white shadow-lg focus:ring-2 focus:ring-[#0055a2] outline-none"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Message d'erreur éventuel */}
-      {error && (
-        <div className="max-w-7xl mx-auto px-4 mt-4">
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 flex items-center gap-2 text-yellow-700">
-            <AlertCircle size={18} />
-            <span className="text-sm">{error}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Filtres */}
-      <div className="sticky top-0 z-20 bg-white border-b shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 py-3">
-          <div className="flex flex-wrap gap-3 items-center">
-            <Filter size={18} className="text-slate-400" />
-            <select
-              value={selectedDomaine}
-              onChange={(e) => setSelectedDomaine(e.target.value)}
-              className="px-4 py-2 bg-slate-100 rounded-lg text-sm font-medium cursor-pointer hover:bg-slate-200 transition-colors"
-            >
-              <option value="all">📚 Tous les domaines</option>
-              {domaines.map(domaine => (
-                <option key={domaine} value={domaine}>
-                  {getDomaineIcon(domaine)} {domaine}
-                </option>
-              ))}
-            </select>
-            
-            <div className="ml-auto text-sm text-slate-500">
-              {filteredFormations.length} formation(s)
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Liste des formations */}
-      <div className="max-w-7xl mx-auto px-4 py-12">
-        {filteredFormations.length === 0 ? (
-          <div className="text-center py-16">
-            <BookOpen size={48} className="mx-auto text-slate-300 mb-4" />
-            <h3 className="text-xl font-semibold text-slate-800 mb-2">Aucune formation trouvée</h3>
-            <p className="text-slate-500">Essayez de modifier votre recherche</p>
-          </div>
         ) : (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {paginatedFormations.map((formation) => (
-                <div 
-                  key={formation._id} 
-                  className="bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden border border-slate-100"
-                >
-                  <div className="p-5">
-                    <div className="flex justify-between items-start mb-3">
-                      <span className={`px-2 py-1 rounded-lg text-xs font-semibold ${getDomaineColor(formation.domaine)}`}>
-                        {getDomaineIcon(formation.domaine)} {formation.domaine}
-                      </span>
-                    </div>
-                    
-                    <h3 className="text-lg font-bold text-slate-800 mb-2 line-clamp-2">
-                      {formation.titre}
-                    </h3>
-                    
-                    <p className="text-slate-500 text-sm mb-4 line-clamp-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {filteredFormations.map((formation) => (
+              <div
+                key={formation.id}
+                className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow"
+              >
+                <div className="p-4 border-b border-gray-100">
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="text-sm font-medium text-gray-500">
+                      {formation.categorie}
+                    </span>
+                    {getStatutBadge(formation.id, formation.statut)}
+                  </div>
+                  <h3 className="font-bold text-gray-800 text-lg">
+                    {formation.titre}
+                  </h3>
+                  {formation.description && (
+                    <p className="text-xs text-gray-400 mt-1 line-clamp-2">
                       {formation.description}
                     </p>
+                  )}
+                </div>
 
-                    <div className="space-y-2 mb-4 text-sm">
-                      <div className="flex items-center gap-2 text-slate-600">
-                        <Clock size={16} className="text-[#0055a2]" />
-                        <span>{formation.duree}</span>
-                      </div>
-                      
-                      {formation.wilayas && formation.wilayas.length > 0 && (
-                        <div className="flex items-center gap-2 text-slate-600">
-                          <MapPin size={16} className="text-[#0055a2]" />
-                          <span>{formation.wilayas[0]}{formation.wilayas.length > 1 ? ` +${formation.wilayas.length - 1}` : ''}</span>
-                        </div>
-                      )}
-                      
-                      <div className="flex items-center gap-2 text-slate-600">
-                        <Users size={16} className="text-[#0055a2]" />
-                        <span>{formation.placesDisponibles} places disponibles</span>
-                      </div>
+                <div className="p-4 space-y-3">
+                  <div className="flex items-center justify-between text-sm text-gray-500">
+                    <div className="flex items-center gap-1">
+                      <Clock size={14} />
+                      <span>{formation.duree}</span>
                     </div>
-
-                    <button
-                      onClick={() => setShowDetails(formation)}
-                      className="w-full py-2.5 bg-[#0055a2] text-white font-semibold rounded-lg hover:bg-[#004080] transition-colors flex items-center justify-center gap-2"
-                    >
-                      Voir les détails
-                      <ChevronRight size={16} />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <Users size={14} />
+                      <span>{formation.inscrits} inscrits</span>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
 
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="flex justify-center gap-2 mt-8">
-                <button
-                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                  className="p-2 rounded-lg border hover:bg-slate-50 disabled:opacity-50"
-                >
-                  <ChevronLeft size={20} />
-                </button>
-                <span className="px-4 py-2 text-sm">
-                  Page {currentPage} sur {totalPages}
-                </span>
-                <button
-                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                  disabled={currentPage === totalPages}
-                  className="p-2 rounded-lg border hover:bg-slate-50 disabled:opacity-50"
-                >
-                  <ChevronRightIcon size={20} />
-                </button>
+                  {formation.placesDisponibles > 0 &&
+                    !hasDemandeEnCours(formation.id) &&
+                    !hasDemandeRefusee(formation.id) && (
+                      <div className="text-xs text-gray-500">
+                        📍 {formation.placesDisponibles} places disponibles
+                      </div>
+                    )}
+
+                  {/* Afficher le motif du refus si disponible */}
+                  {hasDemandeRefusee(formation.id) &&
+                    (() => {
+                      const refus = mesInscriptions.find(
+                        (i) =>
+                          i.formationId === formation.id &&
+                          i.statut === "refusee",
+                      );
+                      return (
+                        refus?.messageAdmin && (
+                          <div className="mt-2 p-2 bg-red-50 rounded-lg">
+                            <p className="text-xs text-red-600">Motif :</p>
+                            <p className="text-xs text-red-700">
+                              {refus.messageAdmin}
+                            </p>
+                          </div>
+                        )
+                      );
+                    })()}
+                </div>
+
+                <div className="px-4 pb-4 pt-2 border-t border-gray-50">
+                  {getActionButton(formation)}
+                </div>
               </div>
-            )}
-          </>
+            ))}
+          </div>
         )}
-      </div>
+      </main>
 
-      {/* Modal Détails */}
-      {showDetails && (
+      {/* Modal d'inscription */}
+      {showInscriptionModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="bg-white rounded-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white p-4 border-b flex justify-between items-center">
-              <h3 className="text-xl font-bold text-slate-800">Détails de la formation</h3>
-              <button onClick={() => setShowDetails(null)} className="p-1 hover:bg-slate-100 rounded-lg">
-                <X size={20} />
+          <div className="bg-white rounded-xl max-w-md w-full p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold text-gray-800">
+                Demande d'inscription
+              </h3>
+              <button
+                onClick={() => {
+                  setShowInscriptionModal(null);
+                  setInscriptionStatus(null);
+                  setInscriptionMessage("");
+                }}
+                className="p-1 hover:bg-gray-100 rounded-lg"
+              >
+                <XCircle size={20} />
               </button>
             </div>
-            
-            <div className="p-6">
-              <h2 className="text-2xl font-bold text-slate-800 mb-2">{showDetails.titre}</h2>
-              <span className={`inline-block px-3 py-1 rounded-lg text-sm font-semibold mb-4 ${getDomaineColor(showDetails.domaine)}`}>
-                {getDomaineIcon(showDetails.domaine)} {showDetails.domaine}
-              </span>
-              
-              <p className="text-slate-600 mb-6">{showDetails.description}</p>
-              
-              <div className="space-y-3 mb-6">
+
+            {inscriptionStatus ? (
+              <div
+                className={`p-4 rounded-lg ${inscriptionStatus.success ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}
+              >
                 <div className="flex items-center gap-2">
-                  <Clock size={18} className="text-[#0055a2]" />
-                  <span className="font-medium">Durée:</span> {showDetails.duree}
-                </div>
-                <div className="flex items-center gap-2">
-                  <GraduationCap size={18} className="text-[#0055a2]" />
-                  <span className="font-medium">Prérequis:</span> {showDetails.prerequis}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Briefcase size={18} className="text-[#0055a2]" />
-                  <span className="font-medium">Débouchés:</span> {showDetails.debouches}
-                </div>
-                <div className="flex items-center gap-2">
-                  <MapPin size={18} className="text-[#0055a2]" />
-                  <span className="font-medium">Wilayas:</span> {showDetails.wilayas?.join(', ')}
+                  {inscriptionStatus.success ? (
+                    <CheckCircle size={20} />
+                  ) : (
+                    <XCircle size={20} />
+                  )}
+                  <p>{inscriptionStatus.message}</p>
                 </div>
               </div>
-              
-              {showDetails.objectifs && (
-                <div className="mb-6">
-                  <h4 className="font-bold text-slate-800 mb-2 flex items-center gap-2">
-                    <Target size={18} /> Objectifs
-                  </h4>
-                  <ul className="list-disc list-inside space-y-1">
-                    {showDetails.objectifs.map((obj, i) => (
-                      <li key={i} className="text-slate-600 text-sm">{obj}</li>
-                    ))}
-                  </ul>
+            ) : (
+              <>
+                <p className="text-gray-600 mb-4">
+                  Vous souhaitez vous inscrire à la formation :<br />
+                  <strong>{showInscriptionModal.titre}</strong>
+                </p>
+
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Message (optionnel)
+                  </label>
+                  <textarea
+                    value={inscriptionMessage}
+                    onChange={(e) => setInscriptionMessage(e.target.value)}
+                    placeholder="Ajoutez un message à l'administrateur..."
+                    rows="3"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  />
                 </div>
-              )}
-              
-              {showDetails.contenu && (
-                <div className="mb-6">
-                  <h4 className="font-bold text-slate-800 mb-2 flex items-center gap-2">
-                    <Layers size={18} /> Programme
-                  </h4>
-                  <ul className="list-disc list-inside space-y-1">
-                    {showDetails.contenu.map((item, i) => (
-                      <li key={i} className="text-slate-600 text-sm">{item}</li>
-                    ))}
-                  </ul>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => handleInscription(showInscriptionModal)}
+                    disabled={inscriptionLoading === showInscriptionModal.id}
+                    className="flex-1 py-2 bg-[#2b5ea7] text-white rounded-lg hover:bg-[#1e4a8a] transition-colors disabled:opacity-50"
+                  >
+                    {inscriptionLoading === showInscriptionModal.id ? (
+                      <Loader2 size={18} className="animate-spin mx-auto" />
+                    ) : (
+                      "Envoyer la demande"
+                    )}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowInscriptionModal(null);
+                      setInscriptionMessage("");
+                    }}
+                    className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                  >
+                    Annuler
+                  </button>
                 </div>
-              )}
-              
-              <button className="w-full py-3 bg-[#0055a2] text-white font-semibold rounded-lg hover:bg-[#004080] transition-colors">
-                Postuler à cette formation
-              </button>
-            </div>
+              </>
+            )}
           </div>
         </div>
       )}

@@ -37,18 +37,31 @@ const chatHistorySchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
+// SCHÉMA FORMATION MODIFIÉ AVEC IMAGE
 const formationSchema = new mongoose.Schema({
   titre: { type: String, required: true },
   description: { type: String, required: true },
-  domaine: { type: String, enum: ['Services Postaux', 'Monétique & IT', 'Gestion Financière'], required: true },
+  domaine: { type: String, enum: ['Services Postaux', 'Monétique & IT', 'Gestion Financière', 'Développement Web', 'Soft Skills', 'Marketing Digital', 'Gestion de Projet', 'Langues', 'Informatique', 'Finance'], required: true },
   duree: { type: String, required: true },
+  prix: { type: String, default: 'Gratuit' },
   prerequis: { type: String, default: '' },
   debouches: { type: String, default: '' },
   wilayas: [{ type: String }],
   placesDisponibles: { type: Number, default: 0 },
+  inscrits: { type: Number, default: 0 },
   dateDebut: { type: Date },
+  formateur: { type: String, default: '' },
   formateurId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  createdAt: { type: Date, default: Date.now }
+  objectifs: [{ type: String }],
+  contenu: [{ type: String }],
+  image: { type: String, default: '' }, // NOUVEAU CHAMP POUR L'IMAGE
+  niveau: { type: String, enum: ['debutant', 'intermediaire', 'avance'], default: 'debutant' },
+  statut: { type: String, enum: ['actif', 'inactif'], default: 'actif' },
+  certificat: { type: Boolean, default: true },
+  tags: [{ type: String }],
+  note: { type: Number, default: 4.5 },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
 });
 
 const faqSchema = new mongoose.Schema({
@@ -107,6 +120,20 @@ const Conversation = mongoose.model('Conversation', conversationSchema);
 const Inscription = mongoose.model('Inscription', inscriptionSchema);
 const Notification = mongoose.model('Notification', notificationSchema);
 
+// URLs d'images par défaut pour les formations
+const FORMATION_IMAGES = {
+  'Services Postaux': 'https://images.unsplash.com/photo-1524178232363-1fb2b075b655?w=400&h=300&fit=crop',
+  'Monétique & IT': 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=400&h=300&fit=crop',
+  'Gestion Financière': 'https://images.unsplash.com/photo-1554224155-6726b3ff858f?w=400&h=300&fit=crop',
+  'Développement Web': 'https://images.unsplash.com/photo-1542831371-29b0f74f9713?w=400&h=300&fit=crop',
+  'Soft Skills': 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=400&h=300&fit=crop',
+  'Marketing Digital': 'https://images.unsplash.com/photo-1432888498266-38ffec3eaf0a?w=400&h=300&fit=crop',
+  'Gestion de Projet': 'https://images.unsplash.com/photo-1504868584819-f8e8b4b6d7e3?w=400&h=300&fit=crop',
+  'Langues': 'https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?w=400&h=300&fit=crop',
+  'Informatique': 'https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?w=400&h=300&fit=crop',
+  'Finance': 'https://images.unsplash.com/photo-1554224154-26032ffc0f07?w=400&h=300&fit=crop'
+};
+
 // Fonction principale d'initialisation
 async function initDatabase() {
   try {
@@ -114,7 +141,6 @@ async function initDatabase() {
     await mongoose.connect(MONGODB_URI);
     console.log('✅ Connecté à MongoDB\n');
 
-   
     console.log('📝 Création des index...');
     
     // Index pour User
@@ -126,6 +152,7 @@ async function initDatabase() {
     // Index pour Formation
     await Formation.collection.createIndex({ titre: 1 });
     await Formation.collection.createIndex({ domaine: 1 });
+    await Formation.collection.createIndex({ statut: 1 });
     
     // Index pour FAQ
     await FAQ.collection.createIndex({ question: 1 }, { unique: true });
@@ -173,7 +200,7 @@ async function initDatabase() {
       console.log('✅ Administrateur déjà existant\n');
     }
 
-    // Création de formations par défaut
+    // Création de formations par défaut AVEC IMAGES
     console.log('📚 Création des formations par défaut...');
     const formationsCount = await Formation.countDocuments();
     
@@ -184,49 +211,125 @@ async function initDatabase() {
           description: "Formation complète pour maîtriser l'accueil client, la gestion du courrier, les opérations postales et la relation client.",
           domaine: "Services Postaux",
           duree: "6 mois (3 mois théorie + 3 mois stage pratique)",
+          prix: "Gratuit",
           prerequis: "Baccalauréat toutes séries confondues",
           debouches: "Agent postal, Chef de bureau postal, Responsable clientèle, Superviseur",
           wilayas: ["Alger", "Oran", "Constantine", "Annaba", "Tizi Ouzou", "Sétif", "Blida", "Béjaïa"],
           placesDisponibles: 120,
-          dateDebut: new Date(2026, 0, 15)
+          inscrits: 0,
+          dateDebut: new Date(2026, 0, 15),
+          formateur: "M. Karim Benali",
+          objectifs: [
+            "Maîtriser les techniques d'accueil client",
+            "Gérer efficacement le courrier et les colis",
+            "Utiliser les outils informatiques postaux"
+          ],
+          contenu: [
+            "Module 1: Introduction aux services postaux",
+            "Module 2: Accueil et relation client",
+            "Module 3: Gestion du courrier"
+          ],
+          image: FORMATION_IMAGES['Services Postaux'],
+          niveau: "debutant",
+          statut: "actif",
+          certificat: true,
+          tags: ["services postaux", "agent", "clientèle"],
+          note: 4.7
         },
         {
           titre: "Technicien en Monétique",
           description: "Formation spécialisée dans la maintenance des automates bancaires, le support technique et la gestion des services numériques.",
           domaine: "Monétique & IT",
           duree: "8 mois (4 mois théorie + 4 mois stage)",
+          prix: "Gratuit",
           prerequis: "Bac+2 en informatique, électronique ou télécommunications",
           debouches: "Technicien maintenance DAB, Support IT, Administrateur systèmes, Technicien réseau",
           wilayas: ["Alger", "Oran", "Constantine", "Annaba"],
           placesDisponibles: 60,
-          dateDebut: new Date(2026, 1, 1)
+          inscrits: 0,
+          dateDebut: new Date(2026, 1, 1),
+          formateur: "Mme. Nadia Boudiaf",
+          objectifs: [
+            "Diagnostiquer et réparer les automates bancaires",
+            "Gérer le parc informatique",
+            "Assurer la sécurité des transactions"
+          ],
+          contenu: [
+            "Module 1: Architecture des systèmes monétiques",
+            "Module 2: Maintenance des DAB/GAB",
+            "Module 3: Sécurité des transactions"
+          ],
+          image: FORMATION_IMAGES['Monétique & IT'],
+          niveau: "intermediaire",
+          statut: "actif",
+          certificat: true,
+          tags: ["monétique", "IT", "maintenance"],
+          note: 4.8
         },
         {
           titre: "Conseiller Financier",
           description: "Maîtrise des opérations CCP, épargne postale, produits financiers et conseil clientèle.",
           domaine: "Gestion Financière",
           duree: "6 mois (3 mois théorie + 3 mois stage)",
+          prix: "Gratuit",
           prerequis: "Bac+2 en finance, comptabilité ou gestion",
           debouches: "Conseiller financier, Analyste crédit, Gestionnaire de patrimoine, Chargé de clientèle",
           wilayas: ["Alger", "Oran", "Constantine", "Sétif", "Blida", "Tlemcen"],
           placesDisponibles: 90,
-          dateDebut: new Date(2026, 2, 1)
+          inscrits: 0,
+          dateDebut: new Date(2026, 2, 1),
+          formateur: "M. Sofiane Merabet",
+          objectifs: [
+            "Maîtriser les produits d'épargne postale",
+            "Analyser les demandes de crédit",
+            "Conseiller les clients sur les placements"
+          ],
+          contenu: [
+            "Module 1: Introduction aux produits financiers",
+            "Module 2: Opérations CCP avancées",
+            "Module 3: Épargne et placements"
+          ],
+          image: FORMATION_IMAGES['Gestion Financière'],
+          niveau: "intermediaire",
+          statut: "actif",
+          certificat: true,
+          tags: ["finance", "conseil", "épargne"],
+          note: 4.6
         },
         {
           titre: "Manager de Projet Digital",
           description: "Formation aux méthodes agiles, gestion de projets digitaux et transformation numérique.",
           domaine: "Monétique & IT",
           duree: "4 mois (2 mois théorie + 2 mois stage)",
+          prix: "Gratuit",
           prerequis: "Bac+3 en management ou informatique",
           debouches: "Chef de projet digital, Product Owner, Scrum Master",
           wilayas: ["Alger", "Oran"],
           placesDisponibles: 40,
-          dateDebut: new Date(2026, 3, 1)
+          inscrits: 0,
+          dateDebut: new Date(2026, 3, 1),
+          formateur: "Mme. Leila Bouaziz",
+          objectifs: [
+            "Maîtriser les méthodes agiles",
+            "Piloter des projets digitaux",
+            "Manager des équipes techniques"
+          ],
+          contenu: [
+            "Module 1: Fondamentaux du management de projet",
+            "Module 2: Méthodologies agiles (Scrum, Kanban)",
+            "Module 3: Outils de gestion de projet"
+          ],
+          image: FORMATION_IMAGES['Gestion de Projet'],
+          niveau: "avance",
+          statut: "actif",
+          certificat: true,
+          tags: ["gestion projet", "agile", "digital"],
+          note: 4.9
         }
       ];
       
       await Formation.insertMany(defaultFormations);
-      console.log(`✅ ${defaultFormations.length} formations créées\n`);
+      console.log(`✅ ${defaultFormations.length} formations créées avec images\n`);
     } else {
       console.log(`✅ ${formationsCount} formations déjà existantes\n`);
     }
@@ -309,7 +412,15 @@ async function initDatabase() {
     });
     
     console.log('========================================');
-    console.log('✅ Initialisation de la base terminée !');
+    
+    // Afficher les formations avec leurs images
+    const formations = await Formation.find();
+    console.log('\n🖼️ Formations avec images:');
+    formations.forEach(f => {
+      console.log(`   - ${f.titre}: ${f.image || 'Pas d\'image'}`);
+    });
+    
+    console.log('\n✅ Initialisation de la base terminée !');
     console.log('========================================\n');
     
     // Fermer la connexion
