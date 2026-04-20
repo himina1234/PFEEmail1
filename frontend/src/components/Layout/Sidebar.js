@@ -1,4 +1,4 @@
-// src/components/Layout/Sidebar.js - Version corrigée
+// src/components/Layout/Sidebar.js
 import React, { useState, useEffect } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useUser } from "../context/UserContext";
@@ -25,118 +25,61 @@ import {
   Heart,
   MessageCircle,
   HelpCircle,
+  Home,
   Activity,
 } from "lucide-react";
 
-const Sidebar = () => {
-  const { currentUser, updateCurrentUser, refreshUserData } = useUser();
+const Sidebar = ({ isOpen = true }) => {
+  const { currentUser, updateCurrentUser } = useUser();
   const [showProfile, setShowProfile] = useState(false);
+  const [userRole, setUserRole] = useState(null);
   const [userDataState, setUserDataState] = useState(null);
-  const [avatarError, setAvatarError] = useState(false);
   const navigate = useNavigate();
-
-  // Fonction pour vérifier si l'avatar est valide
-  const isValidAvatar = (avatar) => {
-    if (!avatar) return false;
-    if (typeof avatar !== 'string') return false;
-    // Vérifier que c'est une image base64 valide et pas trop grande
-    if (avatar.startsWith('data:image') && avatar.length < 150000) {
-      return true;
-    }
-    return false;
-  };
-
-  // Charger les données utilisateur
-  const loadUserData = () => {
-    // Priorité: d'abord le contexte, puis localStorage
-    let user = currentUser;
-    
-    if (!user || Object.keys(user).length === 0) {
-      const savedUser = localStorage.getItem("currentUser");
-      if (savedUser) {
-        try {
-          user = JSON.parse(savedUser);
-        } catch (error) {
-          console.error("Erreur parsing:", error);
-        }
-      }
-    }
-    
-    if (user && Object.keys(user).length > 0) {
-      console.log("📋 Sidebar: Chargement utilisateur:", user.prenom, user.nom);
-      setUserDataState(user);
-      setAvatarError(false); // Reset error on load
-    }
-  };
 
   useEffect(() => {
     loadUserData();
-  }, [currentUser]);
 
-  // Écouter les mises à jour du profil
-  useEffect(() => {
+    // Écouter les mises à jour du profil
     const handleProfileUpdate = (event) => {
-      console.log("🔄 Sidebar: Mise à jour profil reçue", event.detail);
       if (event.detail) {
         setUserDataState(event.detail);
-        setAvatarError(false);
-        // Mettre à jour localStorage
-        localStorage.setItem("currentUser", JSON.stringify(event.detail));
+        setUserRole(event.detail.role);
       }
-    };
-
-    const handleStorageChange = (e) => {
-      if (e.key === "currentUser" && e.newValue) {
-        try {
-          const updatedUser = JSON.parse(e.newValue);
-          console.log("🔄 Sidebar: Storage changé", updatedUser);
-          setUserDataState(updatedUser);
-          setAvatarError(false);
-        } catch (error) {
-          console.error("Erreur storage:", error);
-        }
-      }
-    };
-
-    const handleLogin = () => {
-      console.log("🔐 Sidebar: Événement login détecté");
-      setTimeout(() => {
-        loadUserData();
-        if (refreshUserData) refreshUserData();
-      }, 100);
-    };
-
-    const handleLogout = () => {
-      console.log("🚪 Sidebar: Événement logout détecté");
-      setUserDataState(null);
-      setAvatarError(false);
     };
 
     window.addEventListener("profileUpdated", handleProfileUpdate);
-    window.addEventListener("storage", handleStorageChange);
-    window.addEventListener("userLogin", handleLogin);
-    window.addEventListener("userLogout", handleLogout);
+    window.addEventListener("storage", loadUserData);
 
     return () => {
       window.removeEventListener("profileUpdated", handleProfileUpdate);
-      window.removeEventListener("storage", handleStorageChange);
-      window.removeEventListener("userLogin", handleLogin);
-      window.removeEventListener("userLogout", handleLogout);
+      window.removeEventListener("storage", loadUserData);
     };
-  }, [refreshUserData]);
+  }, [currentUser]);
+
+  const loadUserData = () => {
+    const savedUser = localStorage.getItem("currentUser");
+    if (savedUser) {
+      try {
+        const user = JSON.parse(savedUser);
+        setUserDataState(user);
+        setUserRole(user.role);
+      } catch (error) {
+        console.error("Erreur lors du parsing du user:", error);
+        if (currentUser) {
+          setUserDataState(currentUser);
+          setUserRole(currentUser.role);
+        }
+      }
+    } else if (currentUser) {
+      setUserDataState(currentUser);
+      setUserRole(currentUser.role);
+    }
+  };
 
   const handleLogout = () => {
-    // Émettre un événement avant de nettoyer
-    window.dispatchEvent(new CustomEvent("userLogout"));
-    
     localStorage.removeItem("currentUser");
     localStorage.removeItem("token");
     localStorage.removeItem("favoriteFormations");
-    localStorage.removeItem("users");
-    
-    setUserDataState(null);
-    setAvatarError(false);
-    
     navigate("/login");
   };
 
@@ -192,6 +135,7 @@ const Sidebar = () => {
       roles: ["admin"],
       description: "Gestion des examens",
     },
+
     // Menu Formateur
     {
       path: "/formateur",
@@ -225,9 +169,10 @@ const Sidebar = () => {
       path: "/cours-direct",
       name: "Cours en direct",
       icon: Video,
-      roles: ["formateur", "user"],
+      roles: ["formateur"],
       description: "Classes virtuelles",
     },
+
     // Menu Apprenant
     {
       path: "/apprenant",
@@ -272,6 +217,13 @@ const Sidebar = () => {
       description: "Mes attestations",
     },
     {
+      path: "/cours-direct",
+      name: "Cours en direct",
+      icon: Video,
+      roles: ["user"],
+      description: "Classes virtuelles",
+    },
+    {
       path: "/feedback",
       name: "Feedback",
       icon: MessageCircle,
@@ -285,6 +237,7 @@ const Sidebar = () => {
       roles: ["user"],
       description: "Formations favorites",
     },
+
     // Menu commun à tous
     {
       path: "/profile",
@@ -310,7 +263,7 @@ const Sidebar = () => {
   ];
 
   const getFilteredMenu = () => {
-    const role = userDataState?.role || currentUser?.role;
+    const role = userRole || userDataState?.role;
     if (!role) return [];
     return menuItems.filter((item) => item.roles && item.roles.includes(role));
   };
@@ -319,27 +272,27 @@ const Sidebar = () => {
 
   const getUserData = () => {
     if (userDataState) return userDataState;
-    if (currentUser && Object.keys(currentUser).length > 0) return currentUser;
     const savedUser = localStorage.getItem("currentUser");
     if (savedUser) {
       try {
         return JSON.parse(savedUser);
       } catch (error) {
-        return {};
+        return currentUser || {};
       }
     }
-    return {};
+    return currentUser || {};
   };
 
   const userData = getUserData();
-  const userName = `${userData.prenom || ""} ${userData.nom || ""}`.trim() || "Utilisateur";
-  const userMatricule = userData.matricule || "N/A";
+  const userName =
+    userData.fullName ||
+    `${userData.prenom || ""} ${userData.nom || ""}`.trim() ||
+    "Utilisateur";
+  const userMatricule =
+    userData.matricule || userData.email?.split("@")[0] || "N/A";
   const userEmail = userData.email || "email@example.com";
-  const role = userDataState?.role || currentUser?.role || userData?.role || "user";
+  const role = userRole || userData?.role || "user";
   const userAvatar = userData.avatar || null;
-  
-  // Vérifier si l'avatar est valide
-  const validAvatar = isValidAvatar(userAvatar) && !avatarError;
 
   const getRoleConfig = () => {
     const configs = {
@@ -376,36 +329,48 @@ const Sidebar = () => {
 
   const roleConfig = getRoleConfig();
 
-  // Si pas d'utilisateur, ne pas afficher la sidebar ou afficher un chargement
-  if (!role || !userData || Object.keys(userData).length === 0) {
+  if (!role) {
     return (
-      <aside className="w-64 h-screen bg-white flex items-center justify-center border-r border-gray-100">
+      <aside
+        className={`bg-white flex items-center justify-center transition-all duration-300 ${isOpen ? "w-64" : "w-20"}`}
+      >
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#0055a2]"></div>
       </aside>
     );
   }
 
   return (
-    <aside className="w-64 h-screen bg-white shadow-lg flex flex-col shrink-0 border-r border-gray-100">
-      {/* LOGO */}
-      <div className="p-6 pb-4 border-b border-gray-100">
+    <aside
+      className={`bg-white shadow-lg flex flex-col border-r border-gray-100 transition-all duration-300 ${isOpen ? "w-64" : "w-20"}`}
+    >
+      {/* LOGO - Algérie Poste */}
+      <div
+        className={`p-6 pb-4 border-b border-gray-100 ${!isOpen ? "flex justify-center" : ""}`}
+      >
         <div className="flex items-center gap-3 group cursor-pointer">
-          <img
-            src="/image/imag4.jpg"
-            alt="Algérie Poste Logo"
-            className="h-16 w-auto object-contain group-hover:scale-105 transition-transform duration-300"
-            onError={(e) => {
-              e.target.src = "https://via.placeholder.com/64?text=AP";
-            }}
-          />
-          <div className="flex flex-col">
-            <span className="font-black text-sm tracking-tighter text-blue-950 leading-none">
-              ALGÉRIE POSTE
-            </span>
-            <span className="text-[9px] uppercase tracking-[0.2em] font-bold text-[#FFC107]">
-              Learning
-            </span>
-          </div>
+          {isOpen ? (
+            <>
+              <img
+                src="../image/imag4.jpg"
+                alt="Algérie Poste Logo"
+                className="h-16 w-auto object-contain group-hover:scale-105 transition-transform duration-300"
+              />
+              <div className="flex flex-col">
+                <span className="font-black text-sm tracking-tighter text-blue-950 leading-none">
+                  ALGÉRIE POSTE
+                </span>
+                <span className="text-[9px] uppercase tracking-[0.2em] font-bold text-[#FFC107]">
+                  Learning
+                </span>
+              </div>
+            </>
+          ) : (
+            <img
+              src="../image/imag4.jpg"
+              alt="Algérie Poste Logo"
+              className="h-10 w-auto object-contain"
+            />
+          )}
         </div>
       </div>
 
@@ -416,15 +381,11 @@ const Sidebar = () => {
         >
           <div className="flex items-center gap-3">
             <div className="relative shrink-0">
-              {validAvatar ? (
+              {userAvatar ? (
                 <img
                   src={userAvatar}
                   alt={userName}
                   className="w-10 h-10 rounded-full object-cover border-2 border-[#0055a2]/20"
-                  onError={() => {
-                    console.error("Erreur chargement avatar, affichage fallback");
-                    setAvatarError(true);
-                  }}
                 />
               ) : (
                 <div
@@ -436,27 +397,30 @@ const Sidebar = () => {
               <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white"></div>
             </div>
 
-            <div className="flex-1 min-w-0">
-              <h3 className="font-semibold text-sm text-gray-800 truncate">
-                {userName}
-              </h3>
-              <p className="text-[10px] text-gray-500 truncate">
-                {userMatricule}
-              </p>
-            </div>
-
-            <button
-              onClick={() => setShowProfile(!showProfile)}
-              className="p-1 hover:bg-gray-200 rounded-lg transition-all"
-            >
-              <ChevronDown
-                size={14}
-                className={`transition-transform text-gray-500 ${showProfile ? "rotate-180" : ""}`}
-              />
-            </button>
+            {isOpen && (
+              <>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-sm text-gray-800 truncate">
+                    {userName}
+                  </h3>
+                  <p className="text-[10px] text-gray-500 truncate">
+                    {userMatricule}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowProfile(!showProfile)}
+                  className="p-1 hover:bg-gray-200 rounded-lg transition-all"
+                >
+                  <ChevronDown
+                    size={14}
+                    className={`transition-transform text-gray-500 ${showProfile ? "rotate-180" : ""}`}
+                  />
+                </button>
+              </>
+            )}
           </div>
 
-          {showProfile && (
+          {showProfile && isOpen && (
             <div className="mt-3 space-y-2 pt-3 border-t border-gray-200 animate-in slide-in-from-top-2 duration-200">
               <div className="flex items-center gap-2 text-[11px]">
                 <Mail size={12} className="text-[#0055a2]" />
@@ -490,9 +454,10 @@ const Sidebar = () => {
             <NavLink
               key={item.path}
               to={item.path}
-              title={item.description}
+              title={!isOpen ? item.name : item.description}
               className={({ isActive }) => `
                 group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200
+                ${!isOpen ? "justify-center" : ""}
                 ${
                   isActive
                     ? `bg-gradient-to-r ${roleConfig.gradient} text-white shadow-md`
@@ -501,8 +466,8 @@ const Sidebar = () => {
               `}
             >
               <item.icon size={18} strokeWidth={2} />
-              <span className="flex-1">{item.name}</span>
-              {item.path === "/apprenant/formations" && (
+              {isOpen && <span className="flex-1">{item.name}</span>}
+              {isOpen && item.path === "/apprenant/formations" && (
                 <span className="text-[9px] px-1.5 py-0.5 bg-white/20 rounded-full">
                   NEW
                 </span>
@@ -520,30 +485,34 @@ const Sidebar = () => {
       <div className="p-4 border-t border-gray-100 space-y-2">
         <button
           onClick={handleLogout}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-red-50 hover:text-red-600 transition-all group"
+          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-red-50 hover:text-red-600 transition-all group ${!isOpen ? "justify-center" : ""}`}
+          title={!isOpen ? "Déconnexion" : ""}
         >
           <LogOut
             size={18}
             className="group-hover:rotate-180 transition-transform duration-300"
           />
-          <span>Déconnexion</span>
+          {isOpen && <span>Déconnexion</span>}
         </button>
 
-        <div className="mt-4 pt-2 text-center">
-          <div
-            className={`inline-flex items-center gap-1 px-3 py-1 rounded-full ${roleConfig.bgColor} ${roleConfig.textColor} text-[10px] font-medium`}
-          >
-            <Zap size={10} />
-            <span>{roleConfig.badge}</span>
-          </div>
-        </div>
-
-        <div className="mt-3 text-center">
-          <p className="text-[9px] text-gray-400 font-medium">
-            © 2026 Algérie Poste
-          </p>
-          <p className="text-[8px] text-gray-300 mt-0.5">Version 2.0.0</p>
-        </div>
+        {isOpen && (
+          <>
+            <div className="mt-4 pt-2 text-center">
+              <div
+                className={`inline-flex items-center gap-1 px-3 py-1 rounded-full ${roleConfig.bgColor} ${roleConfig.textColor} text-[10px] font-medium`}
+              >
+                <Zap size={10} />
+                <span>{roleConfig.badge}</span>
+              </div>
+            </div>
+            <div className="mt-3 text-center">
+              <p className="text-[9px] text-gray-400 font-medium">
+                © 2026 Algérie Poste
+              </p>
+              <p className="text-[8px] text-gray-300 mt-0.5">Version 2.0.0</p>
+            </div>
+          </>
+        )}
       </div>
     </aside>
   );
