@@ -1,4 +1,4 @@
-// UsersManagement.js - Version corrigée avec gestion d'erreur d'image
+// src/pages/UsersManagement.js
 import React, { useState, useEffect } from 'react';
 import ImportExcel from '../components/Users/ImportExcel';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
@@ -10,8 +10,10 @@ import {
   Mail, Phone, Calendar, 
   Trash2, Key, RefreshCw, Download, 
   ChevronLeft, ChevronRight, Eye,
-  TrendingUp, Activity, AlertCircle,
-  Lock, Power, PowerOff, Copy, Check, ImageOff
+  Activity, AlertCircle,
+  Lock, Power, PowerOff, Copy, Check,
+  ShieldCheck, ShieldAlert, Send,
+  X, Filter, MoreVertical
 } from 'lucide-react';
 
 const UsersManagement = () => {
@@ -22,15 +24,18 @@ const UsersManagement = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [validationFilter, setValidationFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedUser, setSelectedUser] = useState(null);
   const [showUserModal, setShowUserModal] = useState(false);
   const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
   const [exporting, setExporting] = useState(false);
   const [togglingStatus, setTogglingStatus] = useState(null);
+  const [resettingPassword, setResettingPassword] = useState(null);
+  const [activatingUser, setActivatingUser] = useState(null);
   const [currentAdmin, setCurrentAdmin] = useState(null);
-  const [copiedPassword, setCopiedPassword] = useState(false);
-  const [imageErrors, setImageErrors] = useState({});
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [stats, setStats] = useState({
     total: 0,
     apprenants: 0,
@@ -38,90 +43,50 @@ const UsersManagement = () => {
     admins: 0,
     newThisMonth: 0,
     active: 0,
-    inactive: 0
+    inactive: 0,
+    emailValidated: 0,
+    pendingActivation: 0
   });
 
   const itemsPerPage = 10;
   const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
-  const getAuthToken = () => {
-    return localStorage.getItem('token');
-  };
+  const getAuthToken = () => localStorage.getItem('token');
+  const getAuthHeaders = () => ({ headers: { 'Authorization': `Bearer ${getAuthToken()}` } });
 
   useEffect(() => {
     const currentUser = localStorage.getItem('currentUser');
-    if (currentUser) {
-      setCurrentAdmin(JSON.parse(currentUser));
-    }
+    if (currentUser) setCurrentAdmin(JSON.parse(currentUser));
     loadUsers();
   }, []);
 
   useEffect(() => {
     filterUsers();
-  }, [searchTerm, roleFilter, statusFilter, users]);
-
-  // Fonction pour vérifier si l'avatar est valide
-  const isValidAvatar = (avatar) => {
-    if (!avatar) return false;
-    if (typeof avatar !== 'string') return false;
-    // Vérifier que c'est une image base64 valide et pas trop grande
-    if (avatar.startsWith('data:image') && avatar.length < 150000) {
-      return true;
-    }
-    return false;
-  };
-
-  const handleImageError = (userId) => {
-    setImageErrors(prev => ({ ...prev, [userId]: true }));
-  };
+  }, [searchTerm, roleFilter, statusFilter, validationFilter, users]);
 
   const loadUsers = async () => {
     setIsLoading(true);
-    setError(null);
-    
     const token = getAuthToken();
     if (!token) {
-      setError("Vous devez être connecté pour voir les utilisateurs");
+      setError("Vous devez être connecté");
       setIsLoading(false);
       return;
     }
 
     try {
-      const response = await axios.get(`${API_URL}/users`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
+      const response = await axios.get(`${API_URL}/users`, getAuthHeaders());
       if (response.data.success) {
-        let usersData = response.data.data;
-        
-        const savedUsers = localStorage.getItem('users');
-        if (savedUsers) {
-          const saved = JSON.parse(savedUsers);
-          const savedMap = new Map();
-          saved.forEach(u => {
-            savedMap.set(u.id || u._id, u.password);
-          });
-          
-          usersData = usersData.map(user => ({
-            ...user,
-            password: savedMap.get(user.id || user._id) || user.password || '********'
-          }));
-        }
-        
-        setUsers(usersData);
-        calculateStats(usersData);
-      } else {
-        throw new Error(response.data.message || "Erreur de chargement");
+        setUsers(response.data.data);
+        calculateStats(response.data.data);
       }
     } catch (err) {
-      console.error('Erreur chargement utilisateurs:', err);
-      setError(err.response?.data?.message || err.message || "Impossible de charger les utilisateurs");
-      
-      const savedUsers = localStorage.getItem('users');
-      if (savedUsers) {
-        const usersData = JSON.parse(savedUsers);
-        setUsers(usersData);
-        calculateStats(usersData);
+      console.error('Erreur:', err);
+      if (err.response?.status === 401) {
+        setError("Session expirée");
+        localStorage.removeItem('token');
+        setTimeout(() => window.location.href = '/login', 2000);
+      } else {
+        setError(err.response?.data?.message || "Impossible de charger les utilisateurs");
       }
     } finally {
       setIsLoading(false);
@@ -133,22 +98,16 @@ const UsersManagement = () => {
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
     
-    const newThisMonth = usersData.filter(user => {
-      const createdDate = new Date(user.createdAt);
-      return createdDate.getMonth() === currentMonth && createdDate.getFullYear() === currentYear;
-    }).length;
-
-    const activeUsers = usersData.filter(u => u.status === 'actif' || u.status === 'active' || !u.status).length;
-    const inactiveUsers = usersData.filter(u => u.status === 'inactif' || u.status === 'inactive').length;
-
     setStats({
       total: usersData.length,
       apprenants: usersData.filter(u => u.role === 'apprenant').length,
       formateurs: usersData.filter(u => u.role === 'formateur').length,
       admins: usersData.filter(u => u.role === 'admin').length,
-      newThisMonth: newThisMonth,
-      active: activeUsers,
-      inactive: inactiveUsers
+      newThisMonth: usersData.filter(u => new Date(u.createdAt).getMonth() === currentMonth && new Date(u.createdAt).getFullYear() === currentYear).length,
+      active: usersData.filter(u => u.isActive === true).length,
+      inactive: usersData.filter(u => u.isActive === false).length,
+      emailValidated: usersData.filter(u => u.isEmailValidated === true).length,
+      pendingActivation: usersData.filter(u => u.isEmailValidated === true && u.isActive === false && u.role !== 'admin').length
     });
   };
 
@@ -160,21 +119,16 @@ const UsersManagement = () => {
         user.nom?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         user.prenom?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         user.matricule?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (user.email && user.email.toLowerCase().includes(searchTerm.toLowerCase()))
+        user.email?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
     
-    if (roleFilter !== 'all') {
-      filtered = filtered.filter(user => user.role === roleFilter);
-    }
-
+    if (roleFilter !== 'all') filtered = filtered.filter(user => user.role === roleFilter);
     if (statusFilter !== 'all') {
-      filtered = filtered.filter(user => {
-        const userStatus = user.status || 'actif';
-        return statusFilter === 'active' 
-          ? (userStatus === 'actif' || userStatus === 'active')
-          : (userStatus === 'inactif' || userStatus === 'inactive');
-      });
+      filtered = filtered.filter(user => statusFilter === 'active' ? user.isActive === true : user.isActive === false);
+    }
+    if (validationFilter !== 'all') {
+      filtered = filtered.filter(user => validationFilter === 'validated' ? user.isEmailValidated === true : user.isEmailValidated === false);
     }
     
     setFilteredUsers(filtered);
@@ -182,85 +136,56 @@ const UsersManagement = () => {
   };
 
   const handleImportComplete = (importedData) => {
-    if (importedData && importedData.created) {
-      const updatedUsers = [...users];
-      importedData.created.forEach(newUser => {
-        const existingIndex = updatedUsers.findIndex(u => u.id === newUser.id);
-        if (existingIndex >= 0) {
-          updatedUsers[existingIndex] = {
-            ...updatedUsers[existingIndex],
-            password: newUser.temporaryPassword
-          };
-        } else {
-          updatedUsers.push({
-            ...newUser,
-            password: newUser.temporaryPassword
-          });
-        }
-      });
-      setUsers(updatedUsers);
-      localStorage.setItem('users', JSON.stringify(updatedUsers));
-    }
     loadUsers();
     setShowImportModal(false);
+    setSuccess(`${importedData?.created?.length || 0} utilisateur(s) importé(s). Un email de validation leur a été envoyé.`);
+    setTimeout(() => setSuccess(null), 5000);
   };
 
-  const canToggleStatus = (targetUser) => {
-    if (targetUser.role === 'admin') {
-      return false;
+  const activateUser = async (userId) => {
+    const user = users.find(u => u.id === userId || u._id === userId);
+    if (!user) return;
+    
+    if (!user.isEmailValidated) {
+      setError("Cet utilisateur n'a pas encore validé son email. Il doit d'abord cliquer sur le lien dans l'email.");
+      return;
     }
-    return true;
+    
+    setActivatingUser(userId);
+    try {
+      const response = await axios.put(`${API_URL}/users/${userId}/activate`, {}, getAuthHeaders());
+      if (response.data.success) {
+        loadUsers();
+        setSuccess(`✅ Compte de ${user.prenom} ${user.nom} activé avec succès. Un email lui a été envoyé.`);
+        setTimeout(() => setSuccess(null), 4000);
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || "Erreur lors de l'activation");
+    } finally {
+      setActivatingUser(null);
+    }
   };
 
   const toggleUserStatus = async (userId) => {
     const user = users.find(u => u.id === userId || u._id === userId);
     if (!user) return;
-
-    if (!canToggleStatus(user)) {
-      setError("❌ Vous ne pouvez pas modifier le statut d'un administrateur");
+    if (user.role === 'admin') {
+      setError("Vous ne pouvez pas modifier le statut d'un administrateur");
       return;
     }
 
-    const currentStatus = user.status || 'actif';
-    const newStatus = (currentStatus === 'actif' || currentStatus === 'active') ? 'inactif' : 'actif';
+    const newStatus = user.isActive ? 'inactif' : 'actif';
     
-    const token = getAuthToken();
-    if (!token) {
-      setError("Vous devez être connecté");
-      return;
-    }
-
     setTogglingStatus(userId);
-
     try {
-      const response = await axios.put(`${API_URL}/users/${userId}/status`, 
-        { status: newStatus },
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      );
-      
+      const response = await axios.put(`${API_URL}/users/${userId}/status`, { status: newStatus }, getAuthHeaders());
       if (response.data.success) {
-        const updatedUsers = users.map(u => 
-          (u.id === userId || u._id === userId) ? { ...u, status: newStatus } : u
-        );
-        setUsers(updatedUsers);
-        calculateStats(updatedUsers);
-        
-        localStorage.setItem('users', JSON.stringify(updatedUsers));
-        
-        const message = newStatus === 'actif' 
-          ? 'Compte activé avec succès' 
-          : 'Compte désactivé avec succès';
-        setError(null);
-        alert(`✅ ${message}`);
-        
-        await loadUsers();
-      } else {
-        throw new Error(response.data.message || "Erreur lors du changement de statut");
+        loadUsers();
+        setSuccess(`Compte ${newStatus === 'actif' ? 'activé' : 'désactivé'} avec succès`);
+        setTimeout(() => setSuccess(null), 3000);
       }
     } catch (err) {
-      console.error('Erreur changement statut:', err);
-      setError(err.response?.data?.message || err.message || "Erreur lors du changement de statut");
-      alert("❌ Erreur: Impossible de modifier le statut. Veuillez réessayer.");
+      setError(err.response?.data?.message || "Erreur lors du changement de statut");
     } finally {
       setTogglingStatus(null);
     }
@@ -268,539 +193,325 @@ const UsersManagement = () => {
 
   const deleteUser = async (userId) => {
     const userToDelete = users.find(u => u.id === userId || u._id === userId);
-    
     if (userToDelete?.role === 'admin') {
-      setError("❌ Vous ne pouvez pas supprimer un administrateur");
-      alert("❌ Impossible de supprimer un compte administrateur");
+      setError("Vous ne pouvez pas supprimer un administrateur");
       return;
     }
-
     if (currentAdmin && (currentAdmin.id === userId || currentAdmin._id === userId)) {
-      setError("❌ Vous ne pouvez pas supprimer votre propre compte");
-      alert("❌ Vous ne pouvez pas supprimer votre propre compte");
+      setError("Vous ne pouvez pas supprimer votre propre compte");
       return;
     }
-
-    if (!window.confirm(`Êtes-vous sûr de vouloir supprimer ${userToDelete?.prenom} ${userToDelete?.nom} ? Cette action est irréversible.`)) {
-      return;
-    }
-
-    const token = getAuthToken();
-    if (!token) {
-      setError("Vous devez être connecté");
-      return;
-    }
+    if (!window.confirm(`Supprimer ${userToDelete?.prenom} ${userToDelete?.nom} ?`)) return;
 
     try {
-      await axios.delete(`${API_URL}/users/${userId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      await loadUsers();
-      alert("✅ Utilisateur supprimé avec succès");
+      await axios.delete(`${API_URL}/users/${userId}`, getAuthHeaders());
+      setSuccess("Utilisateur supprimé avec succès");
+      loadUsers();
     } catch (err) {
-      console.error('Erreur suppression:', err);
       setError(err.response?.data?.message || "Erreur lors de la suppression");
-      alert("❌ Erreur lors de la suppression");
     }
+  };
+
+  const generatePassword = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+    let password = '';
+    for (let i = 0; i < 10; i++) password += chars.charAt(Math.floor(Math.random() * chars.length));
+    return password;
   };
 
   const resetPassword = async (userId) => {
     const user = users.find(u => u.id === userId || u._id === userId);
-    
-    if (user?.role === 'admin' && currentAdmin?.id !== userId && currentAdmin?._id !== userId) {
-      setError("❌ Vous ne pouvez pas réinitialiser le mot de passe d'un autre administrateur");
-      alert("❌ Vous ne pouvez pas réinitialiser le mot de passe d'un autre administrateur");
-      return;
-    }
+    if (!user) return;
 
-    const generatePassword = () => {
-      const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-      const lowercase = 'abcdefghijklmnopqrstuvwxyz';
-      const numbers = '0123456789';
-      const specials = '!@#$%^&*';
-      const allChars = uppercase + lowercase + numbers + specials;
-      
-      let password = '';
-      password += uppercase.charAt(Math.floor(Math.random() * uppercase.length));
-      password += lowercase.charAt(Math.floor(Math.random() * lowercase.length));
-      password += numbers.charAt(Math.floor(Math.random() * numbers.length));
-      password += specials.charAt(Math.floor(Math.random() * specials.length));
-      
-      for (let i = password.length; i < 10; i++) {
-        password += allChars.charAt(Math.floor(Math.random() * allChars.length));
-      }
-      
-      return password.split('').sort(() => Math.random() - 0.5).join('');
-    };
-    
     const newPassword = generatePassword();
-    const token = getAuthToken();
-    
-    if (!token) {
-      setError("Vous devez être connecté");
-      return;
-    }
-
+    setResettingPassword(userId);
     try {
-      await axios.put(`${API_URL}/users/${userId}/reset-password`, 
-        { newPassword },
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      );
-      
-      const updatedUsers = users.map(u => {
-        if (u.id === userId || u._id === userId) {
-          return { ...u, password: newPassword };
-        }
-        return u;
-      });
-      setUsers(updatedUsers);
-      localStorage.setItem('users', JSON.stringify(updatedUsers));
-      
-      alert(`✅ Nouveau mot de passe pour ${user.prenom} ${user.nom}:\n\n${newPassword}\n\nVeuillez le communiquer à l'utilisateur.`);
-      
-      await loadUsers();
+      await axios.put(`${API_URL}/users/${userId}/reset-password`, { newPassword }, getAuthHeaders());
+      alert(`✅ Nouveau mot de passe pour ${user.prenom} ${user.nom}:\n\n${newPassword}`);
+      setSuccess("Mot de passe réinitialisé");
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
-      console.error('Erreur reset password:', err);
-      alert("❌ Erreur lors de la réinitialisation du mot de passe");
+      setError("Erreur lors de la réinitialisation");
+    } finally {
+      setResettingPassword(null);
     }
   };
 
-  const viewUserDetails = (user) => {
-    setSelectedUser(user);
-    setShowUserModal(true);
-    setCopiedPassword(false);
-  };
-
-  const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text);
-    setCopiedPassword(true);
-    setTimeout(() => setCopiedPassword(false), 2000);
-  };
-
-  // Composant Avatar avec gestion d'erreur
-  const UserAvatar = ({ user, size = "w-10 h-10", textSize = "text-lg" }) => {
-    const userId = user.id || user._id;
-    const hasError = imageErrors[userId];
-    const avatar = user.avatar;
-    const isValid = isValidAvatar(avatar) && !hasError;
-    
-    const getInitial = () => {
-      const prenom = user.prenom || '';
-      const nom = user.nom || '';
-      if (prenom && nom) return `${prenom.charAt(0)}${nom.charAt(0)}`.toUpperCase();
-      if (prenom) return prenom.charAt(0).toUpperCase();
-      if (nom) return nom.charAt(0).toUpperCase();
-      return '?';
-    };
-    
-    const getRoleIcon = () => {
-      if (user.role === 'admin') return '👑';
-      if (user.role === 'formateur') return '👨‍🏫';
-      return '👨‍🎓';
-    };
-    
-    if (isValid) {
-      return (
-        <img
-          src={avatar}
-          alt={`${user.prenom} ${user.nom}`}
-          className={`${size} rounded-xl object-cover`}
-          onError={() => handleImageError(userId)}
-        />
-      );
-    }
-    
-    // Fallback: afficher une icône ou les initiales
-    return (
-      <div className={`${size} bg-gradient-to-br from-indigo-100 to-purple-100 rounded-xl flex items-center justify-center ${textSize} font-bold text-indigo-600`}>
-        {getInitial() || getRoleIcon()}
-      </div>
-    );
-  };
-
-  const exportAllUsersWithPasswords = () => {
+  const exportUsers = () => {
     setExporting(true);
-    
     try {
-      const usersData = users;
-      
-      if (!usersData || usersData.length === 0) {
-        alert("❌ Aucun utilisateur à exporter");
-        setExporting(false);
-        return;
-      }
-      
-      const exportData = usersData.map(user => ({
+      const exportData = users.map(user => ({
         'Matricule': user.matricule,
         'Nom': user.nom,
         'Prénom': user.prenom,
         'Email': user.email || '',
         'Téléphone': user.telephone || '',
         'Rôle': user.role === 'admin' ? 'Administrateur' : user.role === 'formateur' ? 'Formateur' : 'Apprenant',
-        'Mot de Passe': user.password && user.password !== '********' ? user.password : 'Non défini',
-        'Statut': user.status === 'actif' || user.status === 'active' ? 'Actif' : 'Inactif',
-        'Date création': user.createdAt ? new Date(user.createdAt).toLocaleDateString('fr-FR') : 'Non défini',
-        'Dernière connexion': user.lastLogin ? new Date(user.lastLogin).toLocaleDateString('fr-FR') : 'Jamais'
+        'Statut': user.isActive ? 'Actif' : 'Inactif',
+        'Email Validé': user.isEmailValidated ? 'Oui' : 'Non',
+        'Date création': user.createdAt ? new Date(user.createdAt).toLocaleDateString('fr-FR') : ''
       }));
-
       const ws = XLSX.utils.json_to_sheet(exportData);
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Tous_Utilisateurs");
-      
-      ws['!cols'] = [
-        { wch: 15 }, { wch: 20 }, { wch: 20 }, { wch: 30 },
-        { wch: 15 }, { wch: 18 }, { wch: 20 }, { wch: 12 },
-        { wch: 15 }, { wch: 15 }
-      ];
-      
+      XLSX.utils.book_append_sheet(wb, ws, "Utilisateurs");
+      ws['!cols'] = [{ wch: 15 }, { wch: 20 }, { wch: 20 }, { wch: 30 }, { wch: 15 }, { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 15 }];
       const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-      const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      saveAs(blob, `tous_utilisateurs_avec_mots_passe_${new Date().toISOString().split('T')[0]}.xlsx`);
-      
-      alert(`✅ Export réussi !\n📊 ${usersData.length} utilisateurs exportés.`);
+      saveAs(new Blob([excelBuffer]), `utilisateurs_${new Date().toISOString().split('T')[0]}.xlsx`);
+      setSuccess(`${users.length} utilisateurs exportés`);
     } catch (err) {
-      console.error('Erreur export:', err);
-      setError("Impossible d'exporter les utilisateurs");
-      alert("❌ Erreur lors de l'export: " + err.message);
+      setError("Erreur lors de l'export");
     } finally {
       setExporting(false);
     }
   };
 
-  const exportUsers = () => {
-    const exportData = filteredUsers.map(user => ({
-      'Matricule': user.matricule,
-      'Nom': user.nom,
-      'Prénom': user.prenom,
-      'Email': user.email || '',
-      'Téléphone': user.telephone || '',
-      'Rôle': user.role === 'admin' ? 'Administrateur' : user.role === 'formateur' ? 'Formateur' : 'Apprenant',
-      'Statut': user.status === 'actif' || user.status === 'active' ? 'Actif' : 'Inactif',
-      'Date création': user.createdAt ? new Date(user.createdAt).toLocaleDateString('fr-FR') : 'Non défini'
-    }));
-    
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Utilisateurs");
-    
-    ws['!cols'] = [
-      { wch: 15 }, { wch: 20 }, { wch: 20 }, { wch: 30 },
-      { wch: 15 }, { wch: 18 }, { wch: 12 }, { wch: 15 }
-    ];
-    
-    const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-    const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    saveAs(blob, `utilisateurs_${new Date().toISOString().split('T')[0]}.xlsx`);
-  };
-
   const indexOfLastItem = currentPage * itemsPerPage;
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentUsers = filteredUsers.slice(indexOfFirstItem, indexOfLastItem);
+  const currentUsers = filteredUsers.slice(indexOfLastItem - itemsPerPage, indexOfLastItem);
   const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
 
   const getRoleBadge = (role) => {
     const badges = {
-      admin: { icon: Crown, text: 'Administrateur', class: 'bg-gradient-to-r from-red-500 to-pink-500' },
-      formateur: { icon: GraduationCap, text: 'Formateur', class: 'bg-gradient-to-r from-blue-500 to-cyan-500' },
-      apprenant: { icon: Users, text: 'Apprenant', class: 'bg-gradient-to-r from-emerald-500 to-teal-500' }
+      admin: { icon: Crown, text: 'Admin', class: 'bg-red-500' },
+      formateur: { icon: GraduationCap, text: 'Formateur', class: 'bg-blue-500' },
+      apprenant: { icon: Users, text: 'Apprenant', class: 'bg-emerald-500' }
     };
     return badges[role] || badges.apprenant;
   };
 
-  const getStatusBadge = (status) => {
-    const currentStatus = status || 'actif';
-    if (currentStatus === 'actif' || currentStatus === 'active') {
-      return {
-        icon: Power,
-        text: 'Actif',
-        class: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
-        dotClass: 'bg-emerald-500'
-      };
-    } else {
-      return {
-        icon: PowerOff,
-        text: 'Inactif',
-        class: 'bg-red-50 text-red-700 border border-red-200',
-        dotClass: 'bg-red-500'
-      };
-    }
-  };
-
-  if (isLoading) {
-    return <LoadingSpinner />;
-  }
+  if (isLoading) return <LoadingSpinner />;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50/30">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
         
-        {/* Header */}
-        <div className="mb-8">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        {/* Header - Version moderne et épurée */}
+        <div className="mb-6 sm:mb-8">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-slate-900 to-indigo-900 bg-clip-text text-transparent">
-                Gestion des Utilisateurs
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
+                Utilisateurs
               </h1>
-              <p className="text-slate-500 mt-2 flex items-center gap-2">
-                <Activity size={16} />
-                Gérez et suivez l'activité de tous les utilisateurs de la plateforme
+              <p className="text-sm text-gray-500 mt-1">
+                Gérez les comptes et les accès
               </p>
             </div>
-            <div className="flex gap-3 flex-wrap">
-              <button
-                onClick={exportAllUsersWithPasswords}
-                disabled={exporting}
-                className="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl hover:shadow-lg transition-all duration-200 flex items-center gap-2 font-medium transform hover:scale-105 disabled:opacity-50"
-              >
-                {exporting ? (
-                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                ) : (
-                  <Lock size={18} />
-                )}
-                Export Complet (MDP)
-              </button>
-              
+            <div className="flex gap-2 sm:gap-3">
               <button
                 onClick={exportUsers}
-                className="px-5 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 transition-all duration-200 flex items-center gap-2 font-medium shadow-sm"
+                disabled={exporting}
+                className="px-4 sm:px-5 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all flex items-center gap-2 text-sm font-medium disabled:opacity-50 shadow-sm"
               >
-                <Download size={18} />
-                Export Simple
+                {exporting ? (
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-600 border-t-transparent"></div>
+                ) : (
+                  <Download size={16} />
+                )}
+                <span className="hidden sm:inline">Exporter</span>
               </button>
-              
               <button
                 onClick={() => setShowImportModal(true)}
-                className="px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:shadow-lg transition-all duration-200 flex items-center gap-2 font-medium transform hover:scale-105"
+                className="px-4 sm:px-6 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all flex items-center gap-2 text-sm font-medium shadow-sm"
               >
-                <UserPlus size={18} />
-                Importer Excel
+                <UserPlus size={16} />
+                <span className="hidden sm:inline">Importer</span>
               </button>
             </div>
           </div>
         </div>
 
+        {/* Messages Toast */}
+        {success && (
+          <div className="mb-4 p-3 sm:p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-3">
+            <Check size={18} className="text-emerald-600 flex-shrink-0" />
+            <p className="text-emerald-700 text-sm flex-1">{success}</p>
+            <button onClick={() => setSuccess(null)} className="text-emerald-600 hover:text-emerald-800">
+              <X size={16} />
+            </button>
+          </div>
+        )}
         {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3">
-            <AlertCircle className="text-red-600" size={20} />
-            <p className="text-red-700 flex-1">{error}</p>
-            <button onClick={() => setError(null)} className="text-red-600 hover:text-red-800 font-bold">
-              ✕
+          <div className="mb-4 p-3 sm:p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3">
+            <AlertCircle size={18} className="text-red-600 flex-shrink-0" />
+            <p className="text-red-700 text-sm flex-1">{error}</p>
+            <button onClick={() => setError(null)} className="text-red-600 hover:text-red-800">
+              <X size={16} />
             </button>
           </div>
         )}
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
-          {/* ... Vos cartes de stats existantes ... */}
+        {/* Stats Cards - Design moderne */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 sm:gap-4 mb-6 sm:mb-8">
+          <StatCard icon={Users} label="Total" value={stats.total} color="indigo" />
+          <StatCard icon={Users} label="Apprenants" value={stats.apprenants} color="emerald" />
+          <StatCard icon={GraduationCap} label="Formateurs" value={stats.formateurs} color="blue" />
+          <StatCard icon={Crown} label="Admins" value={stats.admins} color="red" />
+          <StatCard icon={Power} label="Actifs" value={stats.active} color="teal" />
+          <StatCard icon={ShieldCheck} label="Validés" value={stats.emailValidated} color="green" />
+          <StatCard icon={ShieldAlert} label="En attente" value={stats.pendingActivation} color="amber" />
         </div>
 
-        {/* Filters Bar */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 mb-6">
-          {/* ... Vos filtres existants ... */}
+        {/* Alerte utilisateurs en attente */}
+        {stats.pendingActivation > 0 && (
+          <div className="mb-6 p-3 sm:p-4 bg-amber-50 border border-amber-200 rounded-xl flex flex-col sm:flex-row items-start sm:items-center gap-3">
+            <ShieldAlert size={18} className="text-amber-600 flex-shrink-0" />
+            <p className="text-amber-700 text-sm flex-1">
+              <strong>{stats.pendingActivation} utilisateur(s)</strong> en attente d'activation
+            </p>
+          </div>
+        )}
+
+        {/* Barre de recherche et filtres - Version responsive */}
+        <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4 mb-6 shadow-sm">
+          {/* Recherche toujours visible */}
+          <div className="flex gap-2">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+              <input
+                type="text"
+                placeholder="Rechercher..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+              />
+            </div>
+            <button
+              onClick={() => setShowMobileFilters(!showMobileFilters)}
+              className="lg:hidden px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50"
+            >
+              <Filter size={18} className="text-gray-600" />
+            </button>
+            <button
+              onClick={() => { setSearchTerm(''); setRoleFilter('all'); setStatusFilter('all'); setValidationFilter('all'); }}
+              className="px-3 py-2 text-gray-500 hover:text-indigo-600 rounded-lg hover:bg-gray-50"
+            >
+              <RefreshCw size={16} />
+            </button>
+          </div>
+
+          {/* Filtres - cachés sur mobile par défaut */}
+          <div className={`${showMobileFilters ? 'flex' : 'hidden'} lg:flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-100`}>
+            <select
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
+              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="all">Tous les rôles</option>
+              <option value="apprenant">Apprenants</option>
+              <option value="formateur">Formateurs</option>
+              <option value="admin">Administrateurs</option>
+            </select>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="all">Tous statuts</option>
+              <option value="active">Actifs</option>
+              <option value="inactive">Inactifs</option>
+            </select>
+            <select
+              value={validationFilter}
+              onChange={(e) => setValidationFilter(e.target.value)}
+              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="all">Validation: tous</option>
+              <option value="validated">Email validé</option>
+              <option value="not_validated">Email non validé</option>
+            </select>
+          </div>
         </div>
 
-        {/* Users Table */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-          <div className="overflow-x-auto">
+        {/* Tableau des utilisateurs - Version responsive */}
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+          {/* Version Desktop - Tableau */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gradient-to-r from-slate-50 to-indigo-50/50 border-b border-slate-200">
+              <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Utilisateur</th>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Matricule</th>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Contact</th>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Rôle</th>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Date d'inscription</th>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Statut</th>
-                  <th className="px-6 py-4 text-right text-xs font-bold text-slate-600 uppercase tracking-wider">Actions</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Utilisateur</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Matricule</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contact</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rôle</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Statut</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Validation</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {currentUsers.map((user) => {
-                  const RoleIcon = getRoleBadge(user.role).icon;
-                  const StatusBadge = getStatusBadge(user.status);
-                  const isAdmin = user.role === 'admin';
-                  const isCurrentUser = currentAdmin && (currentAdmin.id === user.id || currentAdmin._id === user._id);
-                  const canDelete = !isAdmin && !isCurrentUser;
-                  const showStatusButton = !isAdmin;
-                  
-                  return (
-                    <tr key={user.id || user._id} className="hover:bg-slate-50 transition-colors group">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          {/* Utilisation du composant UserAvatar corrigé */}
-                          <UserAvatar user={user} size="w-10 h-10" textSize="text-lg" />
-                          <div>
-                            <p className="font-semibold text-slate-800">
-                              {user.prenom} {user.nom}
-                              {isCurrentUser && <span className="ml-2 text-xs bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full">Vous</span>}
-                            </p>
-                            <p className="text-xs text-slate-400">ID: {(user.id || user._id).slice(0, 8)}</p>
-                          </div>
-                        </div>
-                       </td>
-                      <td className="px-6 py-4">
-                        <code className="text-sm font-mono font-semibold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg">
-                          {user.matricule}
-                        </code>
-                       </td>
-                      <td className="px-6 py-4">
-                        <div className="space-y-1">
-                          {user.email && (
-                            <div className="flex items-center gap-1 text-xs text-slate-600">
-                              <Mail size={12} />
-                              <span>{user.email}</span>
-                            </div>
-                          )}
-                          {user.telephone && (
-                            <div className="flex items-center gap-1 text-xs text-slate-500">
-                              <Phone size={12} />
-                              <span>{user.telephone}</span>
-                            </div>
-                          )}
-                        </div>
-                       </td>
-                      <td className="px-6 py-4">
-                        <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white ${getRoleBadge(user.role).class}`}>
-                          <RoleIcon size={12} />
-                          {getRoleBadge(user.role).text}
-                        </span>
-                       </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-1 text-sm text-slate-600">
-                          <Calendar size={14} />
-                          {new Date(user.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
-                        </div>
-                       </td>
-                      <td className="px-6 py-4">
-                        <span className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium ${StatusBadge.class}`}>
-                          <div className={`w-1.5 h-1.5 ${StatusBadge.dotClass} rounded-full animate-pulse`}></div>
-                          {StatusBadge.text}
-                        </span>
-                       </td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => viewUserDetails(user)}
-                            className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
-                            title="Voir détails"
-                          >
-                            <Eye size={16} />
-                          </button>
-                          
-                          {showStatusButton && (
-                            <button
-                              onClick={() => toggleUserStatus(user.id || user._id)}
-                              disabled={togglingStatus === (user.id || user._id)}
-                              className={`p-2 rounded-lg transition-all ${
-                                (user.status === 'actif' || user.status === 'active' || !user.status)
-                                  ? 'text-slate-400 hover:text-red-600 hover:bg-red-50'
-                                  : 'text-slate-400 hover:text-emerald-600 hover:bg-emerald-50'
-                              } disabled:opacity-50 disabled:cursor-not-allowed`}
-                              title={(user.status === 'actif' || user.status === 'active' || !user.status) ? 'Désactiver le compte' : 'Activer le compte'}
-                            >
-                              {togglingStatus === (user.id || user._id) ? (
-                                <div className="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent"></div>
-                              ) : (user.status === 'actif' || user.status === 'active' || !user.status) ? (
-                                <PowerOff size={16} />
-                              ) : (
-                                <Power size={16} />
-                              )}
-                            </button>
-                          )}
-                          
-                          {(!isAdmin || isCurrentUser) && (
-                            <button
-                              onClick={() => resetPassword(user.id || user._id)}
-                              className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all"
-                              title="Réinitialiser mot de passe"
-                            >
-                              <Key size={16} />
-                            </button>
-                          )}
-                          
-                          {canDelete && (
-                            <button
-                              onClick={() => deleteUser(user.id || user._id)}
-                              className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                              title="Supprimer"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          )}
-                        </div>
-                       </td>
-                     </tr>
-                  );
-                })}
+              <tbody className="divide-y divide-gray-100">
+                {currentUsers.map((user) => (
+                  <UserRowDesktop
+                    key={user.id || user._id}
+                    user={user}
+                    currentAdmin={currentAdmin}
+                    activatingUser={activatingUser}
+                    togglingStatus={togglingStatus}
+                    resettingPassword={resettingPassword}
+                    onActivate={activateUser}
+                    onToggleStatus={toggleUserStatus}
+                    onResetPassword={resetPassword}
+                    onDelete={deleteUser}
+                    onView={setSelectedUser}
+                  />
+                ))}
               </tbody>
             </table>
           </div>
 
+          {/* Version Mobile - Cartes */}
+          <div className="md:hidden divide-y divide-gray-100">
+            {currentUsers.map((user) => (
+              <UserCardMobile
+                key={user.id || user._id}
+                user={user}
+                currentAdmin={currentAdmin}
+                activatingUser={activatingUser}
+                togglingStatus={togglingStatus}
+                resettingPassword={resettingPassword}
+                onActivate={activateUser}
+                onToggleStatus={toggleUserStatus}
+                onResetPassword={resetPassword}
+                onDelete={deleteUser}
+                onView={setSelectedUser}
+              />
+            ))}
+          </div>
+
+          {/* État vide */}
           {filteredUsers.length === 0 && (
-            <div className="text-center py-16">
-              <div className="w-24 h-24 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Users size={40} className="text-slate-400" />
+            <div className="text-center py-12 sm:py-16">
+              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Users size={28} className="text-gray-400" />
               </div>
-              <p className="text-slate-500 font-medium">Aucun utilisateur trouvé</p>
-              <p className="text-slate-400 text-sm mt-1">Essayez de modifier vos critères de recherche</p>
+              <p className="text-gray-500 font-medium">Aucun utilisateur trouvé</p>
               <button
                 onClick={() => setShowImportModal(true)}
-                className="mt-4 px-6 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all inline-flex items-center gap-2"
+                className="mt-4 px-5 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700"
               >
-                <UserPlus size={18} />
                 Importer des utilisateurs
               </button>
             </div>
           )}
 
+          {/* Pagination */}
           {totalPages > 1 && (
-            <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between">
-              <p className="text-sm text-slate-500">
-                Affichage de {indexOfFirstItem + 1} à {Math.min(indexOfLastItem, filteredUsers.length)} sur {filteredUsers.length} utilisateurs
+            <div className="px-4 sm:px-6 py-3 border-t border-gray-200 flex items-center justify-between">
+              <p className="text-xs sm:text-sm text-gray-500">
+                Page {currentPage} / {totalPages}
               </p>
               <div className="flex gap-2">
                 <button
-                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
                   disabled={currentPage === 1}
-                  className="p-2 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  className="p-1.5 sm:p-2 border border-gray-200 rounded-lg disabled:opacity-50 hover:bg-gray-50"
                 >
-                  <ChevronLeft size={18} />
+                  <ChevronLeft size={16} />
                 </button>
-                <div className="flex gap-1">
-                  {[...Array(Math.min(5, totalPages))].map((_, idx) => {
-                    let pageNum;
-                    if (totalPages <= 5) {
-                      pageNum = idx + 1;
-                    } else if (currentPage <= 3) {
-                      pageNum = idx + 1;
-                    } else if (currentPage >= totalPages - 2) {
-                      pageNum = totalPages - 4 + idx;
-                    } else {
-                      pageNum = currentPage - 2 + idx;
-                    }
-                    
-                    return (
-                      <button
-                        key={idx}
-                        onClick={() => setCurrentPage(pageNum)}
-                        className={`w-10 h-10 rounded-lg font-medium transition-all ${
-                          currentPage === pageNum
-                            ? 'bg-indigo-600 text-white shadow-md'
-                            : 'hover:bg-slate-100 text-slate-600'
-                        }`}
-                      >
-                        {pageNum}
-                      </button>
-                    );
-                  })}
-                </div>
                 <button
-                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
                   disabled={currentPage === totalPages}
-                  className="p-2 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  className="p-1.5 sm:p-2 border border-gray-200 rounded-lg disabled:opacity-50 hover:bg-gray-50"
                 >
-                  <ChevronRight size={18} />
+                  <ChevronRight size={16} />
                 </button>
               </div>
             </div>
@@ -808,40 +519,314 @@ const UsersManagement = () => {
         </div>
       </div>
 
-      {/* User Details Modal */}
-      {showUserModal && selectedUser && (
-        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[85vh] overflow-hidden shadow-2xl">
-            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-6">
-              <div className="flex justify-between items-start">
-                <div className="flex items-center gap-4">
-                  <UserAvatar user={selectedUser} size="w-16 h-16" textSize="text-2xl" />
-                  <div>
-                    <h3 className="text-2xl font-bold">{selectedUser.prenom} {selectedUser.nom}</h3>
-                    <p className="text-indigo-100 text-sm">{selectedUser.matricule}</p>
-                  </div>
-                </div>
-                <button onClick={() => setShowUserModal(false)} className="p-2 hover:bg-white/10 rounded-lg transition-all">
-                  ✕
-                </button>
-              </div>
-            </div>
-            
-            <div className="p-6 space-y-4 overflow-y-auto max-h-[55vh]">
-              {/* ... Reste du modal inchangé ... */}
-            </div>
-          </div>
-        </div>
+      {/* Modal détails utilisateur */}
+      {selectedUser && (
+        <UserDetailsModal
+          user={selectedUser}
+          currentAdmin={currentAdmin}
+          activatingUser={activatingUser}
+          onClose={() => setSelectedUser(null)}
+          onActivate={activateUser}
+          onResetPassword={resetPassword}
+        />
       )}
 
+      {/* Modal import */}
       {showImportModal && (
-        <ImportExcel 
-          onClose={() => setShowImportModal(false)}
-          onImportComplete={handleImportComplete}
-        />
+        <ImportExcel onClose={() => setShowImportModal(false)} onImportComplete={handleImportComplete} />
       )}
     </div>
   );
+};
+
+// Composant carte statistique
+const StatCard = ({ icon: Icon, label, value, color }) => {
+  const colors = {
+    indigo: 'bg-indigo-50 text-indigo-600',
+    emerald: 'bg-emerald-50 text-emerald-600',
+    blue: 'bg-blue-50 text-blue-600',
+    red: 'bg-red-50 text-red-600',
+    teal: 'bg-teal-50 text-teal-600',
+    green: 'bg-green-50 text-green-600',
+    amber: 'bg-amber-50 text-amber-600'
+  };
+
+  return (
+    <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-100 shadow-sm">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs text-gray-500 uppercase tracking-wide">{label}</p>
+          <p className="text-xl sm:text-2xl font-bold text-gray-900 mt-1">{value}</p>
+        </div>
+        <div className={`w-8 h-8 sm:w-10 sm:h-10 ${colors[color]} rounded-xl flex items-center justify-center`}>
+          <Icon size={16} className="sm:w-5 sm:h-5" />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Composant ligne tableau desktop
+const UserRowDesktop = ({ user, currentAdmin, activatingUser, togglingStatus, resettingPassword, onActivate, onToggleStatus, onResetPassword, onDelete, onView }) => {
+  const RoleIcon = getRoleBadge(user.role).icon;
+  const isAdmin = user.role === 'admin';
+  const isCurrentUser = currentAdmin && (currentAdmin.id === user.id || currentAdmin._id === user._id);
+  const canActivate = user.isEmailValidated === true && user.isActive === false && !isAdmin;
+  const needsValidation = user.isEmailValidated === false && !isAdmin;
+
+  return (
+    <tr className="hover:bg-gray-50 transition-colors">
+      <td className="px-6 py-3">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-gradient-to-br from-indigo-100 to-purple-100 rounded-lg flex items-center justify-center text-sm font-bold text-indigo-600">
+            {user.prenom?.charAt(0)}{user.nom?.charAt(0)}
+          </div>
+          <div>
+            <p className="font-medium text-gray-900 text-sm">
+              {user.prenom} {user.nom}
+              {isCurrentUser && <span className="ml-2 text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">Vous</span>}
+            </p>
+            <p className="text-xs text-gray-400">ID: {(user.id || user._id).slice(0, 8)}</p>
+          </div>
+        </div>
+      </td>
+      <td className="px-6 py-3">
+        <code className="text-xs font-mono font-medium text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md">{user.matricule}</code>
+      </td>
+      <td className="px-6 py-3">
+        <div className="text-xs text-gray-600">{user.email || '-'}</div>
+      </td>
+      <td className="px-6 py-3">
+        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-white ${getRoleBadge(user.role).class}`}>
+          <RoleIcon size={12} />
+          {getRoleBadge(user.role).text}
+        </span>
+      </td>
+      <td className="px-6 py-3">
+        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${user.isActive ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+          <div className={`w-1.5 h-1.5 rounded-full ${user.isActive ? 'bg-green-500' : 'bg-gray-400'}`}></div>
+          {user.isActive ? 'Actif' : 'Inactif'}
+        </span>
+      </td>
+      <td className="px-6 py-3">
+        {user.isEmailValidated ? (
+          <span className="inline-flex items-center gap-1 text-green-600 bg-green-50 px-2 py-1 rounded-full text-xs">
+            <ShieldCheck size={12} />
+            Validé
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 text-amber-600 bg-amber-50 px-2 py-1 rounded-full text-xs">
+            <ShieldAlert size={12} />
+            En attente
+          </span>
+        )}
+      </td>
+      <td className="px-6 py-3 text-right">
+        <div className="flex items-center justify-end gap-1">
+          <button onClick={() => onView(user)} className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Détails">
+            <Eye size={15} />
+          </button>
+          
+          {canActivate && (
+            <button onClick={() => onActivate(user.id || user._id)} disabled={activatingUser === (user.id || user._id)} className="p-1.5 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 transition-colors" title="Activer">
+              {activatingUser === (user.id || user._id) ? <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent"></div> : <ShieldCheck size={14} />}
+            </button>
+          )}
+          
+          {!isAdmin && !canActivate && user.isActive && (
+            <button onClick={() => onToggleStatus(user.id || user._id)} disabled={togglingStatus === (user.id || user._id)} className="p-1.5 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors" title="Désactiver">
+              {togglingStatus === (user.id || user._id) ? <div className="animate-spin rounded-full h-3 w-3 border-2 border-orange-600 border-t-transparent"></div> : <PowerOff size={14} />}
+            </button>
+          )}
+          
+          {!isAdmin && !canActivate && !user.isActive && (
+            <button onClick={() => onToggleStatus(user.id || user._id)} disabled={togglingStatus === (user.id || user._id)} className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="Activer">
+              {togglingStatus === (user.id || user._id) ? <div className="animate-spin rounded-full h-3 w-3 border-2 border-green-600 border-t-transparent"></div> : <Power size={14} />}
+            </button>
+          )}
+          
+          {(!isAdmin || isCurrentUser) && (
+            <button onClick={() => onResetPassword(user.id || user._id)} disabled={resettingPassword === (user.id || user._id)} className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors" title="Réinitialiser MDP">
+              {resettingPassword === (user.id || user._id) ? <div className="animate-spin rounded-full h-3 w-3 border-2 border-amber-600 border-t-transparent"></div> : <Key size={14} />}
+            </button>
+          )}
+          
+          {!isAdmin && !isCurrentUser && (
+            <button onClick={() => onDelete(user.id || user._id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Supprimer">
+              <Trash2 size={14} />
+            </button>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+};
+
+// Composant carte mobile
+const UserCardMobile = ({ user, currentAdmin, activatingUser, togglingStatus, resettingPassword, onActivate, onToggleStatus, onResetPassword, onDelete, onView }) => {
+  const RoleIcon = getRoleBadge(user.role).icon;
+  const isAdmin = user.role === 'admin';
+  const isCurrentUser = currentAdmin && (currentAdmin.id === user.id || currentAdmin._id === user._id);
+  const canActivate = user.isEmailValidated === true && user.isActive === false && !isAdmin;
+
+  return (
+    <div className="p-4 space-y-3">
+      {/* En-tête carte */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-gradient-to-br from-indigo-100 to-purple-100 rounded-xl flex items-center justify-center text-base font-bold text-indigo-600">
+            {user.prenom?.charAt(0)}{user.nom?.charAt(0)}
+          </div>
+          <div>
+            <p className="font-semibold text-gray-900">
+              {user.prenom} {user.nom}
+              {isCurrentUser && <span className="ml-2 text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">Vous</span>}
+            </p>
+            <code className="text-xs text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">{user.matricule}</code>
+          </div>
+        </div>
+        <button onClick={() => onView(user)} className="p-2 text-gray-400 hover:text-indigo-600">
+          <Eye size={16} />
+        </button>
+      </div>
+
+      {/* Informations */}
+      <div className="grid grid-cols-2 gap-2 text-sm">
+        <div>
+          <p className="text-xs text-gray-400">Email</p>
+          <p className="text-gray-700 text-xs truncate">{user.email || '-'}</p>
+        </div>
+        <div>
+          <p className="text-xs text-gray-400">Rôle</p>
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-medium text-white ${getRoleBadge(user.role).class}`}>
+            <RoleIcon size={10} />
+            {getRoleBadge(user.role).text}
+          </span>
+        </div>
+      </div>
+
+      {/* Statuts */}
+      <div className="flex flex-wrap gap-2">
+        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${user.isActive ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+          <div className={`w-1.5 h-1.5 rounded-full ${user.isActive ? 'bg-green-500' : 'bg-gray-400'}`}></div>
+          {user.isActive ? 'Actif' : 'Inactif'}
+        </span>
+        {user.isEmailValidated ? (
+          <span className="inline-flex items-center gap-1 text-green-600 bg-green-50 px-2 py-1 rounded-full text-xs">
+            <ShieldCheck size={12} />
+            Email validé
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 text-amber-600 bg-amber-50 px-2 py-1 rounded-full text-xs">
+            <ShieldAlert size={12} />
+            En attente
+          </span>
+        )}
+      </div>
+
+      {/* Actions */}
+      <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
+        {canActivate && (
+          <button onClick={() => onActivate(user.id || user._id)} disabled={activatingUser === (user.id || user._id)} className="flex-1 px-3 py-1.5 bg-green-500 text-white rounded-lg text-xs font-medium hover:bg-green-600 disabled:opacity-50 flex items-center justify-center gap-1">
+            {activatingUser === (user.id || user._id) ? <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent"></div> : <ShieldCheck size={12} />}
+            Activer
+          </button>
+        )}
+        
+        {!isAdmin && (
+          <button onClick={() => onToggleStatus(user.id || user._id)} disabled={togglingStatus === (user.id || user._id)} className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-medium flex items-center justify-center gap-1 ${user.isActive ? 'bg-orange-50 text-orange-600 border border-orange-200' : 'bg-green-50 text-green-600 border border-green-200'}`}>
+            {togglingStatus === (user.id || user._id) ? <div className="animate-spin rounded-full h-3 w-3 border-2 border-current border-t-transparent"></div> : user.isActive ? <PowerOff size={12} /> : <Power size={12} />}
+            {user.isActive ? 'Désactiver' : 'Activer'}
+          </button>
+        )}
+        
+        {(!isAdmin || isCurrentUser) && (
+          <button onClick={() => onResetPassword(user.id || user._id)} disabled={resettingPassword === (user.id || user._id)} className="flex-1 px-3 py-1.5 bg-amber-50 text-amber-600 border border-amber-200 rounded-lg text-xs font-medium hover:bg-amber-100 disabled:opacity-50 flex items-center justify-center gap-1">
+            {resettingPassword === (user.id || user._id) ? <div className="animate-spin rounded-full h-3 w-3 border-2 border-amber-600 border-t-transparent"></div> : <Key size={12} />}
+            MDP
+          </button>
+        )}
+        
+        {!isAdmin && !isCurrentUser && (
+          <button onClick={() => onDelete(user.id || user._id)} className="px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg text-xs font-medium hover:bg-red-100 flex items-center justify-center gap-1">
+            <Trash2 size={12} />
+            Supprimer
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// Modal détails utilisateur
+const UserDetailsModal = ({ user, currentAdmin, activatingUser, onClose, onActivate, onResetPassword }) => {
+  const isAdmin = user.role === 'admin';
+  const canActivate = user.isEmailValidated && !user.isActive && !isAdmin;
+
+  return (
+    <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl max-w-md w-full max-h-[90vh] overflow-hidden shadow-xl" onClick={(e) => e.stopPropagation()}>
+        {/* En-tête */}
+        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-5">
+          <div className="flex justify-between items-start">
+            <div>
+              <h3 className="text-xl font-bold">{user.prenom} {user.nom}</h3>
+              <p className="text-indigo-100 text-sm">{user.matricule}</p>
+            </div>
+            <button onClick={onClose} className="p-1.5 hover:bg-white/10 rounded-lg transition-colors">
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* Corps */}
+        <div className="p-5 space-y-4 overflow-y-auto max-h-[60vh]">
+          <div className="space-y-3">
+            <InfoRow label="Email" value={user.email || '-'} />
+            <InfoRow label="Téléphone" value={user.telephone || '-'} />
+            <InfoRow label="Rôle" value={user.role === 'admin' ? 'Administrateur' : user.role === 'formateur' ? 'Formateur' : 'Apprenant'} />
+            <InfoRow label="Statut" value={user.isActive ? 'Actif' : 'Inactif'} />
+            <InfoRow 
+              label="Validation email" 
+              value={user.isEmailValidated ? '✅ Validé' : '⏳ En attente'}
+              valueClass={user.isEmailValidated ? 'text-green-600' : 'text-amber-600'}
+            />
+            <InfoRow label="Date inscription" value={user.createdAt ? new Date(user.createdAt).toLocaleDateString('fr-FR') : '-'} />
+            <InfoRow label="Dernière connexion" value={user.lastLogin ? new Date(user.lastLogin).toLocaleDateString('fr-FR') : 'Jamais'} />
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="p-5 pt-0 flex gap-3">
+          {canActivate && (
+            <button onClick={() => { onActivate(user.id || user._id); onClose(); }} className="flex-1 px-4 py-2 bg-emerald-500 text-white rounded-xl hover:bg-emerald-600 flex items-center justify-center gap-2 text-sm font-medium">
+              <ShieldCheck size={16} /> Activer le compte
+            </button>
+          )}
+          <button onClick={() => { onResetPassword(user.id || user._id); onClose(); }} className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 text-sm font-medium">
+            Réinitialiser MDP
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Composant ligne d'information
+const InfoRow = ({ label, value, valueClass = 'text-gray-800' }) => (
+  <div>
+    <p className="text-xs text-gray-400 uppercase tracking-wide">{label}</p>
+    <p className={`text-sm font-medium ${valueClass}`}>{value}</p>
+  </div>
+);
+
+const getRoleBadge = (role) => {
+  const badges = {
+    admin: { icon: Crown, text: 'Admin', class: 'bg-red-500' },
+    formateur: { icon: GraduationCap, text: 'Formateur', class: 'bg-blue-500' },
+    apprenant: { icon: Users, text: 'Apprenant', class: 'bg-emerald-500' }
+  };
+  return badges[role] || badges.apprenant;
 };
 
 export default UsersManagement;

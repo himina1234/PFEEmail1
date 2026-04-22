@@ -298,30 +298,33 @@ const Sidebar = ({ isOpen = true }) => {
     const configs = {
       admin: {
         icon: "👑",
-        color: "from-orange-500 to-red-500",
+        color: "from-blue-600 to-indigo-600",
         badge: "Administrateur",
-        bgColor: "bg-orange-500/10",
-        borderColor: "border-orange-500/20",
-        textColor: "text-orange-400",
-        gradient: "from-orange-600 to-red-600",
+        bgColor: "bg-blue-50",
+        borderColor: "border-blue-200",
+        textColor: "text-blue-700",
+        gradient: "from-blue-700 to-indigo-700",
+        hoverColor: "hover:bg-blue-50",
       },
       formateur: {
         icon: "🎓",
-        color: "from-green-600 to-emerald-600",
+        color: "from-emerald-600 to-teal-600",
         badge: "Formateur",
-        bgColor: "bg-green-500/10",
-        borderColor: "border-green-500/20",
-        textColor: "text-green-400",
-        gradient: "from-green-600 to-emerald-600",
+        bgColor: "bg-emerald-50",
+        borderColor: "border-emerald-200",
+        textColor: "text-emerald-700",
+        gradient: "from-emerald-700 to-teal-700",
+        hoverColor: "hover:bg-emerald-50",
       },
       user: {
         icon: "👤",
-        color: "from-blue-600 to-cyan-600",
+        color: "from-[#0055a2] to-[#0077e6]",
         badge: "Apprenant",
-        bgColor: "bg-blue-500/10",
-        borderColor: "border-blue-500/20",
-        textColor: "text-blue-400",
+        bgColor: "bg-[#0055a2]/5",
+        borderColor: "border-[#0055a2]/20",
+        textColor: "text-[#0055a2]",
         gradient: "from-[#0055a2] to-[#0077e6]",
+        hoverColor: "hover:bg-[#0055a2]/5",
       },
     };
     return configs[role] || configs.user;
@@ -341,11 +344,11 @@ const Sidebar = ({ isOpen = true }) => {
 
   return (
     <aside
-      className={`bg-white shadow-lg flex flex-col border-r border-gray-100 transition-all duration-300 ${isOpen ? "w-64" : "w-20"}`}
+      className={`bg-gradient-to-b from-white to-gray-50 shadow-xl flex flex-col border-r border-gray-200 transition-all duration-300 ${isOpen ? "w-64" : "w-20"}`}
     >
       {/* LOGO - Algérie Poste */}
       <div
-        className={`p-6 pb-4 border-b border-gray-100 ${!isOpen ? "flex justify-center" : ""}`}
+        className={`p-6 pb-4 border-b border-gray-200 ${!isOpen ? "flex justify-center" : ""}`}
       >
         <div className="flex items-center gap-3 group cursor-pointer">
           {isOpen ? (
@@ -356,7 +359,7 @@ const Sidebar = ({ isOpen = true }) => {
                 className="h-16 w-auto object-contain group-hover:scale-105 transition-transform duration-300"
               />
               <div className="flex flex-col">
-                <span className="font-black text-sm tracking-tighter text-blue-950 leading-none">
+                <span className="font-black text-sm tracking-tighter text-[#003366] leading-none">
                   ALGÉRIE POSTE
                 </span>
                 <span className="text-[9px] uppercase tracking-[0.2em] font-bold text-[#FFC107]">
@@ -375,9 +378,9 @@ const Sidebar = ({ isOpen = true }) => {
       </div>
 
       {/* User Profile Card */}
-      <div className="p-4 border-b border-gray-100">
+      <div className="p-4 border-b border-gray-200">
         <div
-          className={`bg-gradient-to-br ${roleConfig.bgColor} rounded-xl p-3 border ${roleConfig.borderColor}`}
+          className={`bg-gradient-to-br from-white to-gray-100 rounded-xl p-3 border ${roleConfig.borderColor} shadow-sm`}
         >
           <div className="flex items-center gap-3">
             <div className="relative shrink-0">
@@ -409,7 +412,7 @@ const Sidebar = ({ isOpen = true }) => {
                 </div>
                 <button
                   onClick={() => setShowProfile(!showProfile)}
-                  className="p-1 hover:bg-gray-200 rounded-lg transition-all"
+                  className="p-1 hover:bg-gray-100 rounded-lg transition-all"
                 >
                   <ChevronDown
                     size={14}
@@ -461,14 +464,14 @@ const Sidebar = ({ isOpen = true }) => {
                 ${
                   isActive
                     ? `bg-gradient-to-r ${roleConfig.gradient} text-white shadow-md`
-                    : "text-gray-600 hover:bg-gray-50 hover:text-[#0055a2]"
+                    : `text-gray-700 ${roleConfig.hoverColor} hover:text-[#0055a2]`
                 }
               `}
             >
               <item.icon size={18} strokeWidth={2} />
               {isOpen && <span className="flex-1">{item.name}</span>}
               {isOpen && item.path === "/apprenant/formations" && (
-                <span className="text-[9px] px-1.5 py-0.5 bg-white/20 rounded-full">
+                <span className="text-[9px] px-1.5 py-0.5 bg-[#FFC107] text-[#003366] rounded-full font-bold">
                   NEW
                 </span>
               )}
@@ -482,10 +485,10 @@ const Sidebar = ({ isOpen = true }) => {
       </nav>
 
       {/* FOOTER */}
-      <div className="p-4 border-t border-gray-100 space-y-2">
+      <div className="p-4 border-t border-gray-200 space-y-2 bg-white/50">
         <button
           onClick={handleLogout}
-          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-red-50 hover:text-red-600 transition-all group ${!isOpen ? "justify-center" : ""}`}
+          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-700 hover:bg-amber-50 hover:text-amber-700 transition-all group ${!isOpen ? "justify-center" : ""}`}
           title={!isOpen ? "Déconnexion" : ""}
         >
           <LogOut
@@ -506,10 +509,10 @@ const Sidebar = ({ isOpen = true }) => {
               </div>
             </div>
             <div className="mt-3 text-center">
-              <p className="text-[9px] text-gray-400 font-medium">
+              <p className="text-[9px] text-gray-500 font-medium">
                 © 2026 Algérie Poste
               </p>
-              <p className="text-[8px] text-gray-300 mt-0.5">Version 2.0.0</p>
+              <p className="text-[8px] text-gray-400 mt-0.5">Version 2.0.0</p>
             </div>
           </>
         )}

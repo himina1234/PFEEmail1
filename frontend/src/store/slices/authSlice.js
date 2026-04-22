@@ -32,6 +32,18 @@ const authSlice = createSlice({
     clearError: (state) => {
       state.error = null;
     },
+    // ✅ NOUVEAU REDUCER pour la connexion automatique
+    loginSuccess: (state, action) => {
+      state.isLoading = false;
+      state.user = action.payload.user;
+      state.token = action.payload.token;
+      state.error = null;
+    },
+    // ✅ NOUVEAU REDUCER pour mettre à jour l'utilisateur
+    updateUser: (state, action) => {
+      state.user = { ...state.user, ...action.payload };
+      localStorage.setItem('user', JSON.stringify(state.user));
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -56,5 +68,6 @@ const authSlice = createSlice({
   },
 });
 
-export const { clearError } = authSlice.actions;
+// ✅ EXPORTER LES NOUVELLES ACTIONS
+export const { clearError, loginSuccess, updateUser } = authSlice.actions;
 export default authSlice.reducer;

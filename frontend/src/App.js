@@ -1,8 +1,9 @@
-// App.js - Version corrigée
+// App.js - Version corrigée pour apprenant
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { UserProvider } from "./components/context/UserContext";
 import Login from "./pages/Login";
+import AutoLogin from "./pages/AutoLogin";
 import Dashboard from "./pages/Dashboard";
 import UsersManagement from "./pages/UsersManagement";
 import Profile from "./pages/Profile";
@@ -20,70 +21,81 @@ import ApprenantMesFormations from "./pages/ApprenantMesFormations";
 import ApprenantPlanning from "./pages/ApprenantPlanning";
 import ApprenantCahierSuivi from "./pages/ApprenantCahierSuivi";
 
-// ✅ ROUTE ADMIN CORRIGÉE - Utilise uniquement localStorage
+// ✅ ROUTE ADMIN
 const AdminRoute = ({ children }) => {
   const currentUser = localStorage.getItem("currentUser");
+  if (!currentUser) return <Navigate to="/login" />;
+  try {
+    const user = JSON.parse(currentUser);
+    if (user.role === "admin") return children;
+    if (user.role === "formateur") return <Navigate to="/formateur" />;
+    if (user.role === "apprenant" || user.role === "user") return <Navigate to="/apprenant" />;
+  } catch (error) {
+    console.error(error);
+  }
+  return <Navigate to="/login" />;
+};
 
-  console.log("🔍 AdminRoute - currentUser:", currentUser);
-
+// ✅ ROUTE APPRENANT (CORRIGÉE)
+const ApprenantRoute = ({ children }) => {
+  const currentUser = localStorage.getItem("currentUser");
+  console.log("🔍 ApprenantRoute - currentUser:", currentUser);
+  
   if (!currentUser) {
     console.log("❌ Pas d'utilisateur, redirection login");
     return <Navigate to="/login" />;
   }
-
+  
   try {
     const user = JSON.parse(currentUser);
     console.log("👤 Rôle utilisateur:", user.role);
-
-    // Vérifier si l'utilisateur est admin
-    if (user.role === "admin") {
-      console.log("✅ Admin autorisé");
-      return children;
-    }
-
-    // Rediriger selon le rôle
-    if (user.role === "formateur") {
-      console.log("➡️ Redirection vers formateur");
-      return <Navigate to="/formateur" />;
-    }
-    if (user.role === "user" || user.role === "apprenant") {
-      console.log("➡️ Redirection vers apprenant");
-      return <Navigate to="/apprenant" />;
-    }
-  } catch (error) {
-    console.error("Erreur lors de la lecture du user:", error);
-  }
-
-  console.log("❌ Redirection vers login par défaut");
-  return <Navigate to="/login" />;
-};
-
-// ✅ ROUTE USER CORRIGÉE
-const UserRoute = ({ children, allowedRoles = [] }) => {
-  const currentUser = localStorage.getItem("currentUser");
-
-  if (!currentUser) {
-    return <Navigate to="/login" />;
-  }
-
-  try {
-    const user = JSON.parse(currentUser);
-    if (allowedRoles.length === 0 || allowedRoles.includes(user.role)) {
+    
+    if (user.role === "apprenant" || user.role === "user") {
+      console.log("✅ Apprenant autorisé");
       return children;
     }
     if (user.role === "admin") {
+      console.log("➡️ Redirection admin vers dashboard");
       return <Navigate to="/dashboard" />;
     }
     if (user.role === "formateur") {
+      console.log("➡️ Redirection formateur");
       return <Navigate to="/formateur" />;
     }
-    if (user.role === "user" || user.role === "apprenant") {
-      return <Navigate to="/apprenant" />;
-    }
   } catch (error) {
-    console.error("Erreur lors de la lecture du user:", error);
+    console.error("Erreur:", error);
   }
+  return <Navigate to="/login" />;
+};
 
+// ✅ ROUTE FORMATEUR
+const FormateurRoute = ({ children }) => {
+  const currentUser = localStorage.getItem("currentUser");
+  if (!currentUser) return <Navigate to="/login" />;
+  try {
+    const user = JSON.parse(currentUser);
+    if (user.role === "formateur") return children;
+    if (user.role === "admin") return <Navigate to="/dashboard" />;
+    if (user.role === "apprenant" || user.role === "user") return <Navigate to="/apprenant" />;
+  } catch (error) {
+    console.error(error);
+  }
+  return <Navigate to="/login" />;
+};
+
+// ✅ ROUTE USER GÉNÉRIQUE
+const UserRoute = ({ children, allowedRoles = [] }) => {
+  const currentUser = localStorage.getItem("currentUser");
+  if (!currentUser) return <Navigate to="/login" />;
+  try {
+    const user = JSON.parse(currentUser);
+    if (allowedRoles.length === 0 || allowedRoles.includes(user.role)) return children;
+    if (user.role === "admin") return <Navigate to="/dashboard" />;
+    if (user.role === "formateur") return <Navigate to="/formateur" />;
+    if (user.role === "apprenant" || user.role === "user") return <Navigate to="/apprenant" />;
+  } catch (error) {
+    console.error(error);
+  }
   return <Navigate to="/login" />;
 };
 
@@ -98,153 +110,29 @@ function App() {
 
           {/* PAGE DE LOGIN */}
           <Route path="/login" element={<Login />} />
+          <Route path="/auto-login" element={<AutoLogin />} />
 
           {/* Routes Admin */}
-          <Route
-            path="/dashboard"
-            element={
-              <AdminRoute>
-                <Layout>
-                  <Dashboard />
-                </Layout>
-              </AdminRoute>
-            }
-          />
+          <Route path="/dashboard" element={<AdminRoute><Layout><Dashboard /></Layout></AdminRoute>} />
+          <Route path="/formations" element={<AdminRoute><Layout><FormationManagement /></Layout></AdminRoute>} />
+          <Route path="/admin/inscriptions" element={<AdminRoute><Layout><AdminInscriptions /></Layout></AdminRoute>} />
+          <Route path="/users" element={<AdminRoute><Layout><UsersManagement /></Layout></AdminRoute>} />
+          <Route path="/services" element={<AdminRoute><Layout><ServiceManagement /></Layout></AdminRoute>} />
+          <Route path="/statistiques" element={<AdminRoute><Layout><Statistiques /></Layout></AdminRoute>} />
 
-          <Route
-            path="/formations"
-            element={
-              <AdminRoute>
-                <Layout>
-                  <FormationManagement />
-                </Layout>
-              </AdminRoute>
-            }
-          />
+          {/* Routes Apprenant */}
+          <Route path="/apprenant" element={<ApprenantRoute><Layout><ApprenantDashboard /></Layout></ApprenantRoute>} />
+          <Route path="/apprenant/mes-formations" element={<ApprenantRoute><Layout><ApprenantMesFormations /></Layout></ApprenantRoute>} />
+          <Route path="/apprenant/planning" element={<ApprenantRoute><Layout><ApprenantPlanning /></Layout></ApprenantRoute>} />
+          <Route path="/apprenant/cahier-suivi" element={<ApprenantRoute><Layout><ApprenantCahierSuivi /></Layout></ApprenantRoute>} />
+          <Route path="/apprenant/formations" element={<ApprenantRoute><Layout><ApprenantFormations /></Layout></ApprenantRoute>} />
 
-          {/* ✅ ROUTE ADMIN INSCRIPTIONS - CORRIGÉE */}
-          <Route
-            path="/admin/inscriptions"
-            element={
-              <AdminRoute>
-                <Layout>
-                  <AdminInscriptions />
-                </Layout>
-              </AdminRoute>
-            }
-          />
+          {/* Routes Formateur */}
+          <Route path="/formateur" element={<FormateurRoute><Layout><FormateurDashboard /></Layout></FormateurRoute>} />
 
+          {/* Route Profil (accessible à tous connectés) */}
+          <Route path="/profile" element={<UserRoute><Layout><Profile /></Layout></UserRoute>} />
           <Route path="/chat" element={<Chat />} />
-
-          <Route
-            path="/users"
-            element={
-              <AdminRoute>
-                <Layout>
-                  <UsersManagement />
-                </Layout>
-              </AdminRoute>
-            }
-          />
-
-          <Route
-            path="/services"
-            element={
-              <AdminRoute>
-                <Layout>
-                  <ServiceManagement />
-                </Layout>
-              </AdminRoute>
-            }
-          />
-
-          <Route
-            path="/profile"
-            element={
-              <UserRoute>
-                <Layout>
-                  <Profile />
-                </Layout>
-              </UserRoute>
-            }
-          />
-
-          {/* Route Apprenant Dashboard */}
-          <Route
-            path="/apprenant"
-            element={
-              <UserRoute allowedRoles={["user", "apprenant"]}>
-                <Layout>
-                  <ApprenantDashboard />
-                </Layout>
-              </UserRoute>
-            }
-          />
-          <Route
-            path="/apprenant/mes-formations"
-            element={
-              <UserRoute allowedRoles={["user", "apprenant"]}>
-                <Layout>
-                  <ApprenantMesFormations />
-                </Layout>
-              </UserRoute>
-            }
-          />
-          <Route
-            path="/apprenant/planning"
-            element={
-              <UserRoute allowedRoles={["user", "apprenant"]}>
-                <Layout>
-                  <ApprenantPlanning />
-                </Layout>
-              </UserRoute>
-            }
-          />
-          <Route
-            path="/apprenant/cahier-suivi"
-            element={
-              <UserRoute allowedRoles={["user", "apprenant"]}>
-                <Layout>
-                  <ApprenantCahierSuivi />
-                </Layout>
-              </UserRoute>
-            }
-          />
-
-          {/* Route Apprenant Formations */}
-          <Route
-            path="/apprenant/formations"
-            element={
-              <UserRoute allowedRoles={["user", "apprenant"]}>
-                <Layout>
-                  <ApprenantFormations />
-                </Layout>
-              </UserRoute>
-            }
-          />
-
-          {/* Route Formateur Dashboard */}
-          <Route
-            path="/formateur"
-            element={
-              <UserRoute allowedRoles={["formateur"]}>
-                <Layout>
-                  <FormateurDashboard />
-                </Layout>
-              </UserRoute>
-            }
-          />
-
-          <Route
-            path="/statistiques"
-            element={
-              <AdminRoute>
-                <Layout>
-                  <Statistiques />
-                </Layout>
-              </AdminRoute>
-            }
-          />
 
           {/* Redirection */}
           <Route path="*" element={<Navigate to="/" replace />} />

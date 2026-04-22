@@ -7,12 +7,15 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const XLSX = require('xlsx');
+const nodemailer = require('nodemailer');
 
 dotenv.config();
 
 const app = express();
+
 // ============ ROUTES ============
 const cahierSuiviRoutes = require('./routes/cahierSuiviRoutes');
+
 // ============ MIDDLEWARES ============
 app.use(cors({
   origin: ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:5173'],
@@ -23,9 +26,136 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// ============ SERVICE EMAIL ============
+class EmailService {
+  constructor() {
+    this.transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port: parseInt(process.env.SMTP_PORT) || 587,
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    });
+  }
+
+  async sendEmail(to, subject, html) {
+    try {
+      const mailOptions = {
+        from: process.env.EMAIL_FROM || '"Plateforme Formation" <noreply@plateforme.com>',
+        to,
+        subject,
+        html,
+      };
+      const info = await this.transporter.sendMail(mailOptions);
+      console.log(`✅ Email envoyé à ${to}`);
+      return { success: true, messageId: info.messageId };
+    } catch (error) {
+      console.error('❌ Erreur envoi email:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async sendWelcomeValidationEmail(user, temporaryPassword) {
+    const validationLink = `http://localhost:5000/api/auth/validate-account?email=${encodeURIComponent(user.email)}&token=${user.validationToken}`;
+    
+    const subject = '🎉 Bienvenue - Validez votre compte';
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <style>
+          body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+          .credentials { background: white; border: 2px solid #e0e0e0; border-radius: 8px; padding: 20px; margin: 20px 0; }
+          .password-box { background: #f0f0f0; font-family: monospace; font-size: 20px; padding: 12px; text-align: center; border-radius: 6px; margin: 15px 0; font-weight: bold; }
+          .validation-btn { display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; margin: 20px 0; font-weight: bold; }
+          .footer { text-align: center; margin-top: 30px; font-size: 12px; color: #999; border-top: 1px solid #eee; padding-top: 20px; }
+          .warning { background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h2>Bienvenue ${user.prenom} ${user.nom} !</h2>
+          </div>
+          <div class="content">
+            <p>Un compte a été créé pour vous sur la plateforme de formation.</p>
+            <div class="credentials">
+              <p><strong>📧 Email :</strong> ${user.email}</p>
+              <p><strong>🆔 Matricule :</strong> ${user.matricule}</p>
+              <p><strong>👤 Rôle :</strong> ${user.role === 'admin' ? 'Administrateur' : user.role === 'formateur' ? 'Formateur' : 'Apprenant'}</p>
+              <p><strong>🔑 Mot de passe temporaire :</strong></p>
+              <div class="password-box">${temporaryPassword}</div>
+            </div>
+            <div class="warning">
+              <strong>⚠️ IMPORTANT :</strong> Pour activer votre compte, vous devez d'abord valider votre email.
+            </div>
+            <div style="text-align: center;">
+              <a href="${validationLink}" class="validation-btn">✅ Valider mon inscription</a>
+            </div>
+            <p>Après validation, un administrateur devra activer votre compte.</p>
+            <p>Pour toute question, contactez l'administrateur.</p>
+          </div>
+          <div class="footer">
+            <p>© 2024 Plateforme de Formation</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+    return await this.sendEmail(user.email, subject, html);
+  }
+
+  async sendAccountActivatedEmail(user) {
+    const subject = '✅ Votre compte a été activé';
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <style>
+          body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+          .button { background: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; }
+          .footer { text-align: center; margin-top: 30px; font-size: 12px; color: #999; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h2>✅ Compte activé !</h2>
+          </div>
+          <div class="content">
+            <p>Bonjour <strong>${user.prenom} ${user.nom}</strong>,</p>
+            <p>Un administrateur a activé votre compte. Vous pouvez maintenant vous connecter.</p>
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/login" class="button">🔐 Se connecter</a>
+            </div>
+            <p><strong>Informations :</strong><br>📧 Email: ${user.email}<br>🆔 Matricule: ${user.matricule}</p>
+            <p><strong>Mot de passe :</strong> Celui que vous avez reçu dans l'email de bienvenue.</p>
+          </div>
+          <div class="footer">
+            <p>© 2024 Plateforme de Formation</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+    return await this.sendEmail(user.email, subject, html);
+  }
+}
+
+const emailService = new EmailService();
+
 // ============ MODÈLES ============
 
-// Modèle User - Version corrigée sans validation stricte sur sexe
 const userSchema = new mongoose.Schema({
   nom: { type: String, required: true },
   prenom: { type: String, default: '' },
@@ -34,18 +164,21 @@ const userSchema = new mongoose.Schema({
   telephone: { type: String, default: '' },
   password: { type: String, required: true },
   role: { type: String, enum: ['admin', 'apprenant', 'formateur'], default: 'apprenant' },
-  isActive: { type: Boolean, default: true },
+  isActive: { type: Boolean, default: false },
+  isEmailValidated: { type: Boolean, default: false },
+  validationToken: { type: String, default: null },
+  status: { type: String, default: 'pending' },
   avatar: { type: String, default: null },
   dateNaissance: { type: Date, default: null },
-  sexe: { type: String, default: null }, // Plus de validation enum
+  sexe: { type: String, default: null },
   adresse: { type: String, default: '' },
+  lastLogin: { type: Date, default: null },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });
 
 const User = mongoose.model('User', userSchema);
 
-// Modèle ChatHistory
 const chatHistorySchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   messages: [{
@@ -59,7 +192,6 @@ const chatHistorySchema = new mongoose.Schema({
 
 const ChatHistory = mongoose.model('ChatHistory', chatHistorySchema);
 
-// Modèle Formation
 const formationSchema = new mongoose.Schema({
   titre: { type: String, required: true },
   description: { type: String, required: true },
@@ -74,42 +206,25 @@ const formationSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
-// Modèle Inscription
-const inscriptionSchema = new mongoose.Schema(
-  {
-    apprenantId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-    formationId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Formation",
-      required: true,
-    },
-    formationTitre: { type: String, required: true },
-    formationDomaine: { type: String, required: true },
-    statut: {
-      type: String,
-      enum: ["en_attente", "confirmee", "refusee", "annulee"],
-      default: "en_attente",
-    },
-    demandeEnvoyeeLe: { type: Date, default: Date.now },
-    reponseLe: { type: Date },
-    messageApprenant: { type: String, default: "" },
-    messageAdmin: { type: String, default: "" },
-  },
-  { timestamps: true },
-);
+const Formation = mongoose.model('Formation', formationSchema);
+
+const inscriptionSchema = new mongoose.Schema({
+  apprenantId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  formationId: { type: mongoose.Schema.Types.ObjectId, ref: "Formation", required: true },
+  formationTitre: { type: String, required: true },
+  formationDomaine: { type: String, required: true },
+  statut: { type: String, enum: ["en_attente", "confirmee", "refusee", "annulee"], default: "en_attente" },
+  demandeEnvoyeeLe: { type: Date, default: Date.now },
+  reponseLe: { type: Date },
+  messageApprenant: { type: String, default: "" },
+  messageAdmin: { type: String, default: "" },
+}, { timestamps: true });
+
 const Inscription = mongoose.model('Inscription', inscriptionSchema);
 
 const notificationSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-  type: {
-    type: String,
-    enum: ["message", "call", "inscription", "system"],
-    default: "system",
-  },
+  type: { type: String, enum: ["message", "call", "inscription", "system", "user_approval"], default: "system" },
   title: { type: String, required: true },
   message: { type: String, required: true },
   data: { type: mongoose.Schema.Types.Mixed, default: {} },
@@ -119,10 +234,6 @@ const notificationSchema = new mongoose.Schema({
 
 const Notification = mongoose.model("Notification", notificationSchema);
 
-
-const Formation = mongoose.model('Formation', formationSchema);
-
-// Modèle FAQ
 const faqSchema = new mongoose.Schema({
   question: { type: String, required: true, unique: true },
   reponse: { type: String, required: true },
@@ -160,7 +271,6 @@ const adminMiddleware = (req, res, next) => {
   next();
 };
 
-// Configuration multer pour l'upload
 const upload = multer({ 
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
@@ -179,7 +289,7 @@ const upload = multer({
 
 // ============ CONNEXION MONGODB ============
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/gestion_utilisateurs';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/gestion_utilisateurs';
 
 mongoose.connect(MONGODB_URI)
   .then(() => console.log('✅ MongoDB connecté avec succès'))
@@ -188,21 +298,7 @@ mongoose.connect(MONGODB_URI)
 // ============ ROUTES DE TEST ============
 
 app.get('/', (req, res) => {
-  res.json({ 
-    name: 'AP Learning API',
-    version: '1.0.0',
-    status: 'online',
-    endpoints: {
-      test: 'GET /api/test',
-      setup: 'POST /api/auth/setup-admin',
-      login: 'POST /api/auth/login',
-      users: 'GET /api/users',
-      import: 'POST /api/users/import',
-      importBatch: 'POST /api/users/import-batch',
-      stats: 'GET /api/users/stats',
-      chatbot: 'POST /api/chatbot/message'
-    }
-  });
+  res.json({ name: 'AP Learning API', version: '1.0.0', status: 'online' });
 });
 
 app.get('/api/test', (req, res) => {
@@ -211,21 +307,12 @@ app.get('/api/test', (req, res) => {
 
 // ============ ROUTES D'AUTHENTIFICATION ============
 
-// Création de l'admin par défaut
 app.post('/api/auth/setup-admin', async (req, res) => {
   try {
     const adminExists = await User.findOne({ role: 'admin' });
     
     if (adminExists) {
-      return res.json({ 
-        success: true,
-        message: 'Admin déjà existant', 
-        admin: {
-          nom: adminExists.nom,
-          matricule: adminExists.matricule,
-          email: adminExists.email
-        }
-      });
+      return res.json({ success: true, message: 'Admin déjà existant' });
     }
     
     const hashedPassword = await bcrypt.hash('admin123', 10);
@@ -238,85 +325,61 @@ app.post('/api/auth/setup-admin', async (req, res) => {
       telephone: '021000000',
       password: hashedPassword,
       role: 'admin',
-      isActive: true
+      isActive: true,
+      isEmailValidated: true,
+      status: 'active'
     });
     
     await admin.save();
     
-    res.json({ 
-      success: true,
-      message: '✅ Admin créé avec succès',
-      credentials: {
-        matricule: 'ADMIN001',
-        password: 'admin123'
-      }
-    });
+    res.json({ success: true, message: '✅ Admin créé', credentials: { matricule: 'ADMIN001', password: 'admin123' } });
   } catch (error) {
     console.error('Erreur création admin:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// Route de connexion
-// ROUTE DE CONNEXION MODIFIÉE (remplacez l'ancienne)
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { matricule, password } = req.body;
-    
     console.log('🔐 Tentative de connexion:', matricule);
     
     const user = await User.findOne({ matricule });
     
     if (!user) {
-      console.log('❌ Utilisateur non trouvé:', matricule);
-      return res.status(401).json({ 
+      return res.status(401).json({ success: false, message: 'Matricule ou mot de passe incorrect' });
+    }
+    
+    // Vérifier si l'email a été validé
+    if (!user.isEmailValidated) {
+      return res.status(403).json({ 
         success: false, 
-        message: 'Matricule ou mot de passe incorrect' 
+        message: '❌ Veuillez d\'abord valider votre email via le lien reçu.',
+        code: 'EMAIL_NOT_VALIDATED'
       });
     }
     
-    // VÉRIFICATION DU MOT DE PASSE
+    // Vérifier si le compte est activé par l'admin
+    if (!user.isActive) {
+      return res.status(403).json({ 
+        success: false, 
+        message: '⏳ Votre compte est en attente d\'activation par un administrateur.',
+        code: 'PENDING_APPROVAL'
+      });
+    }
+    
     const isValidPassword = await bcrypt.compare(password, user.password);
     
     if (!isValidPassword) {
-      console.log('❌ Mot de passe incorrect pour:', matricule);
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Matricule ou mot de passe incorrect' 
-      });
+      return res.status(401).json({ success: false, message: 'Matricule ou mot de passe incorrect' });
     }
     
-    // VÉRIFICATION CRITIQUE : Vérifier si le compte est ACTIF
-    // Supporte les deux formats: isActive (boolean) ou status (string)
-    let isActive = true;
-    if (user.isActive !== undefined) {
-      isActive = user.isActive === true;
-    }
-    if (user.status !== undefined) {
-      isActive = (user.status === 'actif' || user.status === 'active');
-    }
-    
-    if (!isActive) {
-      console.log('❌ Compte désactivé pour:', matricule);
-      return res.status(403).json({ 
-        success: false, 
-        message: '❌ Votre compte est désactivé. Veuillez contacter un administrateur.',
-        code: 'ACCOUNT_DISABLED'
-      });
-    }
-    
-    // Générer le token JWT
     const token = jwt.sign(
-      { 
-        userId: user._id, 
-        role: user.role,
-        status: isActive ? 'actif' : 'inactif'
-      },
+      { userId: user._id, role: user.role },
       process.env.JWT_SECRET || 'secret_key_2026',
       { expiresIn: '7d' }
     );
     
-    // Mettre à jour la dernière connexion
     user.lastLogin = new Date();
     await user.save();
     
@@ -333,322 +396,194 @@ app.post('/api/auth/login', async (req, res) => {
         email: user.email,
         telephone: user.telephone,
         role: user.role,
-        status: user.status || (user.isActive ? 'actif' : 'inactif'),
+        status: user.status,
         isActive: user.isActive,
+        isEmailValidated: user.isEmailValidated,
         avatar: user.avatar
       }
     });
   } catch (error) {
     console.error('Erreur de connexion:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Erreur lors de la connexion' 
-    });
+    res.status(500).json({ success: false, message: 'Erreur lors de la connexion' });
   }
 });
-// ROUTE POUR ACTIVER/DÉSACTIVER UN COMPTE
-app.put('/api/users/:userId/status', authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const { status } = req.body;
-    
-    console.log(`🔄 Changement de statut pour l'utilisateur ${userId}: ${status}`);
-    
-    // Normaliser le statut
-    let isActive;
-    let statusString;
-    
-    if (status === 'actif' || status === 'active' || status === true) {
-      isActive = true;
-      statusString = 'actif';
-    } else {
-      isActive = false;
-      statusString = 'inactif';
-    }
-    
-    // Mettre à jour l'utilisateur (supporte les deux formats)
-    const updateData = {
-      isActive: isActive,
-      status: statusString,
-      updatedAt: new Date()
-    };
-    
-    const user = await User.findByIdAndUpdate(
-      userId,
-      updateData,
-      { new: true }
-    ).select('-password');
-    
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'Utilisateur non trouvé'
-      });
-    }
-    
-    console.log(`✅ Statut mis à jour: ${user.nom} ${user.prenom} -> ${statusString}`);
-    
-    res.json({
-      success: true,
-      message: `Compte ${statusString === 'actif' ? 'activé' : 'désactivé'} avec succès`,
-      data: {
-        id: user._id,
-        status: statusString,
-        isActive: isActive
-      }
-    });
-    
-  } catch (error) {
-    console.error('❌ Erreur changement statut:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Erreur lors du changement de statut'
-    });
-  }
-});
-// MIDDLEWARE POUR VÉRIFIER LE STATUT DU COMPTE À CHAQUE REQUÊTE
-const checkAccountStatus = async (req, res, next) => {
-  try {
-    const userId = req.userId;
-    
-    const user = await User.findById(userId).select('isActive status');
-    
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Utilisateur non trouvé'
-      });
-    }
-    
-    // Vérifier si le compte est actif
-    let isActive = true;
-    if (user.isActive !== undefined) {
-      isActive = user.isActive === true;
-    }
-    if (user.status !== undefined) {
-      isActive = (user.status === 'actif' || user.status === 'active');
-    }
-    
-    if (!isActive) {
-      return res.status(403).json({
-        success: false,
-        message: 'Votre compte a été désactivé. Veuillez contacter un administrateur.',
-        code: 'ACCOUNT_DISABLED'
-      });
-    }
-    
-    next();
-  } catch (error) {
-    console.error('Erreur vérification statut:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erreur lors de la vérification du compte'
-    });
-  }
-};
-// ============ ROUTES PROFIL UTILISATEUR ============
-// Ces routes doivent être PLACÉES AVANT app.get('/api/users/:id')
 
-// GET - Récupérer son propre profil
+// ============ ROUTE DE VALIDATION D'EMAIL (Lien dans l'email) ============
+app.get('/api/auth/validate-account', async (req, res) => {
+  try {
+    const { email, token } = req.query;
+    
+    console.log('========================================');
+    console.log('📧 VALIDATION D\'EMAIL PAR L\'UTILISATEUR');
+    console.log('Email:', email);
+    console.log('========================================');
+    
+    if (!email || !token) {
+      return res.send(`
+        <html><body style="text-align:center;padding:50px;font-family:Arial">
+          <h1 style="color:red;">❌ Lien invalide</h1>
+          <a href="http://localhost:3000/login">Retour à la connexion</a>
+        </body></html>
+      `);
+    }
+    
+    // Vérifier le token
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret_key_2026');
+      console.log('✅ Token valide');
+    } catch (err) {
+      return res.send(`
+        <html><body style="text-align:center;padding:50px;font-family:Arial">
+          <h1 style="color:red;">❌ Lien expiré ou invalide</h1>
+          <a href="http://localhost:3000/login">Retour à la connexion</a>
+        </body></html>
+      `);
+    }
+    
+    // Trouver l'utilisateur
+    const user = await User.findOne({ email: email, validationToken: token });
+    
+    if (!user) {
+      return res.send(`
+        <html><body style="text-align:center;padding:50px;font-family:Arial">
+          <h1 style="color:red;">❌ Utilisateur non trouvé</h1>
+          <a href="http://localhost:3000/login">Retour à la connexion</a>
+        </body></html>
+      `);
+    }
+    
+    // Si déjà validé
+    if (user.isEmailValidated) {
+      return res.send(`
+        <html><body style="text-align:center;padding:50px;font-family:Arial">
+          <h1 style="color:orange;">⚠️ Email déjà validé</h1>
+          <p>Votre email a déjà été validé. En attente d'activation par l'administrateur.</p>
+          <a href="http://localhost:3000/login">Retour à la connexion</a>
+        </body></html>
+      `);
+    }
+    
+    // ✅ VALIDER L'EMAIL
+    user.isEmailValidated = true;
+    user.status = 'pending_approval';
+    user.validationToken = null;
+    await user.save();
+    
+    console.log('✅ Email validé pour:', user.email);
+    console.log('   - Statut: en attente d\'approbation admin');
+    
+    // 🔔 Notifier l'admin
+    const admins = await User.find({ role: 'admin' });
+    for (const admin of admins) {
+      await Notification.create({
+        userId: admin._id,
+        type: 'user_approval',
+        title: '👤 Nouvel utilisateur à approuver',
+        message: `${user.prenom} ${user.nom} (${user.matricule}) a validé son email et attend votre approbation.`,
+        data: { 
+          userId: user._id,
+          userMatricule: user.matricule,
+          userName: `${user.prenom} ${user.nom}`,
+          userEmail: user.email
+        },
+        read: false
+      });
+    }
+    
+    // Afficher une page de confirmation
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>✅ Email validé</title>
+        <style>
+          body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; margin: 0; display: flex; justify-content: center; align-items: center; }
+          .container { background: white; border-radius: 20px; padding: 40px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); max-width: 500px; }
+          h1 { color: #28a745; margin-bottom: 20px; }
+          .button { display: inline-block; background: #667eea; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin-top: 20px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <h1>✅ Email validé avec succès !</h1>
+          <p>Bonjour <strong>${user.prenom} ${user.nom}</strong>,</p>
+          <p>Votre email a été validé.</p>
+          <p>Un administrateur doit maintenant <strong>activer votre compte</strong>.</p>
+          <p>Vous recevrez un email dès que votre compte sera activé.</p>
+          <a href="http://localhost:3000/login" class="button">🔐 Retour à la connexion</a>
+          <hr>
+          <p style="font-size: 12px; color: #999;">© 2024 Plateforme de Formation</p>
+        </div>
+      </body>
+      </html>
+    `);
+    
+  } catch (error) {
+    console.error('❌ Erreur:', error);
+    res.send(`
+      <html><body style="text-align:center;padding:50px">
+        <h1 style="color:red;">❌ Erreur: ${error.message}</h1>
+        <a href="http://localhost:3000/login">Retour à la connexion</a>
+      </body></html>
+    `);
+  }
+});
+
+// ============ ROUTES PROFIL ============
+
 app.get('/api/users/profile', authMiddleware, async (req, res) => {
   try {
-    console.log('👤 Récupération profil utilisateur:', req.userId);
-    
     const user = await User.findById(req.userId).select('-password');
-    
     if (!user) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Utilisateur non trouvé' 
-      });
+      return res.status(404).json({ success: false, message: 'Utilisateur non trouvé' });
     }
-    
-    const formattedUser = {
-      id: user._id,
-      _id: user._id,
-      nom: user.nom,
-      prenom: user.prenom,
-      matricule: user.matricule,
-      email: user.email,
-      telephone: user.telephone,
-      role: user.role,
-      status: user.status || (user.isActive ? 'actif' : 'inactif'),
-      isActive: user.isActive,
-      dateNaissance: user.dateNaissance,
-      sexe: user.sexe,
-      adresse: user.adresse,
-      avatar: user.avatar,
-      createdAt: user.createdAt,
-      updatedAt: user.updatedAt
-    };
-    
-    res.json({ success: true, data: formattedUser });
-    
+    res.json({ success: true, data: user });
   } catch (error) {
-    console.error('❌ Erreur:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// PUT - Mettre à jour son propre profil
 app.put('/api/users/profile', authMiddleware, async (req, res) => {
   try {
-    const userId = req.userId;
     const updateData = req.body;
-    
-    console.log('✏️ Mise à jour profil:', userId);
-    
-    // Empêcher la modification de champs sensibles
     delete updateData.password;
     delete updateData.matricule;
-    delete updateData._id;
-    delete updateData.id;
     delete updateData.role;
     delete updateData.isActive;
-    delete updateData.createdAt;
+    delete updateData.isEmailValidated;
     
     updateData.updatedAt = new Date();
     
-    if (updateData.dateNaissance === '') {
-      updateData.dateNaissance = null;
-    }
-    
-    const updatedUser = await User.findByIdAndUpdate(
-      userId,
-      { $set: updateData },
-      { new: true, runValidators: true }
-    ).select('-password');
-    
-    if (!updatedUser) {
-      return res.status(404).json({ success: false, message: 'Utilisateur non trouvé' });
-    }
-    
-    const formattedUser = {
-      id: updatedUser._id,
-      _id: updatedUser._id,
-      nom: updatedUser.nom,
-      prenom: updatedUser.prenom,
-      matricule: updatedUser.matricule,
-      email: updatedUser.email,
-      telephone: updatedUser.telephone,
-      role: updatedUser.role,
-      status: updatedUser.status || (updatedUser.isActive ? 'actif' : 'inactif'),
-      isActive: updatedUser.isActive,
-      dateNaissance: updatedUser.dateNaissance,
-      sexe: updatedUser.sexe,
-      adresse: updatedUser.adresse,
-      avatar: updatedUser.avatar,
-      createdAt: updatedUser.createdAt,
-      updatedAt: updatedUser.updatedAt
-    };
-    
-    res.json({ 
-      success: true, 
-      message: 'Profil mis à jour avec succès',
-      data: formattedUser 
-    });
-    
-  } catch (error) {
-    console.error('❌ Erreur:', error);
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// ============ ROUTES UTILISATEURS (avec paramètre ID) ============
-// Ces routes viennent APRÈS les routes /profile
-
-// Récupérer un utilisateur par ID
-app.get('/api/users/:id', authMiddleware, async (req, res) => {
-  try {
-    // Vérifier que l'ID est valide
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ success: false, message: 'ID invalide' });
-    }
-    
-    const user = await User.findById(req.params.id).select('-password');
-    if (!user) {
-      return res.status(404).json({ success: false, message: 'Utilisateur non trouvé' });
-    }
-    res.json({ success: true, data: user });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// Mettre à jour un utilisateur par ID
-app.put('/api/users/:id', authMiddleware, async (req, res) => {
-  try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ success: false, message: 'ID invalide' });
-    }
-    
-    const updateData = req.body;
-    delete updateData.password;
-    delete updateData.matricule;
-    delete updateData._id;
-    
-    updateData.updatedAt = new Date();
-    
-    const user = await User.findByIdAndUpdate(
-      req.params.id,
-      updateData,
-      { new: true, runValidators: true }
-    ).select('-password');
+    const user = await User.findByIdAndUpdate(req.userId, { $set: updateData }, { new: true }).select('-password');
     
     if (!user) {
       return res.status(404).json({ success: false, message: 'Utilisateur non trouvé' });
     }
     
-    res.json({ success: true, data: user, message: 'Utilisateur mis à jour' });
+    res.json({ success: true, message: 'Profil mis à jour', data: user });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// Appliquer ce middleware aux routes protégées
-// Exemple: app.use('/api/users', authMiddleware, checkAccountStatus, adminMiddleware, ...)
+// ============ ROUTES UTILISATEURS (ADMIN) ============
 
-// ============ ROUTES UTILISATEURS ============
-
-// Récupérer tous les utilisateurs
-// Récupérer tous les utilisateurs (avec statut)
 app.get('/api/users', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const users = await User.find({})
-      .select('-password')
-      .sort({ createdAt: -1 });
-    
-    // Transformer les données pour avoir un format cohérent
-    const formattedUsers = users.map(user => ({
-      id: user._id,
-      _id: user._id,
-      nom: user.nom,
-      prenom: user.prenom,
-      matricule: user.matricule,
-      email: user.email,
-      telephone: user.telephone,
-      role: user.role,
-      status: user.status || (user.isActive ? 'actif' : 'inactif'),
-      isActive: user.isActive !== undefined ? user.isActive : true,
-      createdAt: user.createdAt,
-      updatedAt: user.updatedAt,
-      lastLogin: user.lastLogin,
-      avatar: user.avatar
-    }));
-    
-    res.json({ 
-      success: true, 
-      data: formattedUsers, 
-      total: formattedUsers.length 
-    });
+    const users = await User.find({}).select('-password').sort({ createdAt: -1 });
+    res.json({ success: true, data: users, total: users.length });
   } catch (error) {
-    console.error('Erreur:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
-// Récupérer un utilisateur par ID
+
 app.get('/api/users/:id', authMiddleware, async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'ID invalide' });
+    }
     const user = await User.findById(req.params.id).select('-password');
     if (!user) {
       return res.status(404).json({ success: false, message: 'Utilisateur non trouvé' });
@@ -659,33 +594,24 @@ app.get('/api/users/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// Mettre à jour un utilisateur
-app.put('/api/users/:id', authMiddleware, async (req, res) => {
+app.put('/api/users/:id', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const updateData = req.body;
     delete updateData.password;
     delete updateData.matricule;
-    delete updateData._id;
     
     updateData.updatedAt = new Date();
     
-    const user = await User.findByIdAndUpdate(
-      req.params.id,
-      updateData,
-      { new: true, runValidators: true }
-    ).select('-password');
-    
+    const user = await User.findByIdAndUpdate(req.params.id, updateData, { new: true }).select('-password');
     if (!user) {
       return res.status(404).json({ success: false, message: 'Utilisateur non trouvé' });
     }
-    
     res.json({ success: true, data: user, message: 'Utilisateur mis à jour' });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// Supprimer un utilisateur
 app.delete('/api/users/:id', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const user = await User.findByIdAndDelete(req.params.id);
@@ -698,7 +624,104 @@ app.delete('/api/users/:id', authMiddleware, adminMiddleware, async (req, res) =
   }
 });
 
-// ============ ROUTE D'IMPORT BATCH (POUR EXCEL ET FORMULAIRE MANUEL) ============
+// ============ ROUTE D'ACTIVATION PAR ADMIN ============
+app.put('/api/users/:userId/activate', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Utilisateur non trouvé' });
+    }
+    
+    // Vérifier que l'email a été validé
+    if (!user.isEmailValidated) {
+      return res.status(400).json({ success: false, message: 'L\'utilisateur n\'a pas encore validé son email' });
+    }
+    
+    if (user.isActive) {
+      return res.status(400).json({ success: false, message: 'Compte déjà activé' });
+    }
+    
+    // Activer le compte
+    user.isActive = true;
+    user.status = 'active';
+    await user.save();
+    
+    // Envoyer email d'activation
+    await emailService.sendAccountActivatedEmail(user);
+    
+    console.log(`✅ Compte activé par admin: ${user.matricule} - ${user.email}`);
+    
+    res.json({ 
+      success: true, 
+      message: 'Compte activé avec succès',
+      data: { id: user._id, matricule: user.matricule, isActive: user.isActive }
+    });
+    
+  } catch (error) {
+    console.error('❌ Erreur activation:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ============ ROUTE POUR CHANGER LE STATUT (ACTIVER/DÉSACTIVER) ============
+app.put('/api/users/:userId/status', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { status } = req.body;
+    
+    const isActive = status === 'actif' || status === 'active' || status === true;
+    const statusString = isActive ? 'active' : 'inactive';
+    
+    const user = await User.findByIdAndUpdate(userId, { isActive: isActive, status: statusString, updatedAt: new Date() }, { new: true }).select('-password');
+    
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Utilisateur non trouvé' });
+    }
+    
+    // Si on active le compte, envoyer un email
+    if (isActive && user.isEmailValidated) {
+      await emailService.sendAccountActivatedEmail(user);
+    }
+    
+    res.json({ success: true, message: `Compte ${isActive ? 'activé' : 'désactivé'}`, data: { id: user._id, isActive: user.isActive } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ============ ROUTE DE RÉINITIALISATION MOT DE PASSE ============
+
+app.put('/api/users/:userId/reset-password', authMiddleware, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { newPassword } = req.body;
+    
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ success: false, message: 'ID utilisateur invalide' });
+    }
+    
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Utilisateur non trouvé' });
+    }
+    
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
+    user.updatedAt = new Date();
+    await user.save();
+    
+    console.log('✅ Mot de passe réinitialisé pour:', user.email);
+    
+    res.json({ success: true, message: 'Mot de passe réinitialisé avec succès' });
+  } catch (error) {
+    console.error('❌ Erreur reset password:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ============ ROUTES D'IMPORT ============
 
 app.post('/api/users/import-batch', authMiddleware, adminMiddleware, async (req, res) => {
   try {
@@ -713,28 +736,26 @@ app.post('/api/users/import-batch', authMiddleware, adminMiddleware, async (req,
     
     for (const userData of users) {
       try {
-        // Vérifier si l'utilisateur existe déjà
-        const existingUser = await User.findOne({ 
-          $or: [
-            { email: userData.email },
-            { nom: userData.nom, prenom: userData.prenom }
-          ] 
-        });
+        const existingUser = await User.findOne({ $or: [{ email: userData.email }] });
         
         if (existingUser) {
           errors.push({ email: userData.email, error: 'Utilisateur déjà existant' });
           continue;
         }
         
-        // Générer matricule unique
         const prefix = userData.role === 'formateur' ? 'F' : 'A';
         const year = new Date().getFullYear();
         const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
         const matricule = `${prefix}${year}${random}`;
         
-        // Générer mot de passe temporaire
         const plainPassword = Math.random().toString(36).slice(-8) + Math.floor(Math.random() * 1000);
         const hashedPassword = await bcrypt.hash(plainPassword, 10);
+        
+        const validationToken = jwt.sign(
+          { email: userData.email, matricule: matricule },
+          process.env.JWT_SECRET || 'secret_key_2026',
+          { expiresIn: '7d' }
+        );
         
         const newUser = new User({
           nom: userData.nom,
@@ -744,11 +765,16 @@ app.post('/api/users/import-batch', authMiddleware, adminMiddleware, async (req,
           matricule: matricule,
           password: hashedPassword,
           role: userData.role,
-          isActive: true,
+          isActive: false,
+          isEmailValidated: false,
+          validationToken: validationToken,
+          status: 'pending',
           createdAt: new Date()
         });
         
         await newUser.save();
+        
+        const emailResult = await emailService.sendWelcomeValidationEmail(newUser, plainPassword);
         
         createdUsers.push({
           id: newUser._id,
@@ -757,13 +783,12 @@ app.post('/api/users/import-batch', authMiddleware, adminMiddleware, async (req,
           email: newUser.email,
           matricule: newUser.matricule,
           role: newUser.role,
-          temporaryPassword: plainPassword
+          temporaryPassword: plainPassword,
+          emailSent: emailResult.success
         });
         
-        console.log(`✅ Utilisateur créé: ${userData.nom} ${userData.prenom} (${userData.role}) -> ${matricule}`);
-        
+        console.log(`✅ Utilisateur créé: ${userData.nom} ${userData.prenom}`);
       } catch (error) {
-        console.error(`❌ Erreur création ${userData.email}:`, error.message);
         errors.push({ email: userData.email, error: error.message });
       }
     }
@@ -771,16 +796,13 @@ app.post('/api/users/import-batch', authMiddleware, adminMiddleware, async (req,
     res.json({
       success: true,
       message: `${createdUsers.length} utilisateur(s) créé(s), ${errors.length} erreur(s)`,
-      data: { created: createdUsers, errors }
+      data: { created: createdUsers, errors, emailsSent: createdUsers.filter(u => u.emailSent).length }
     });
-    
   } catch (error) {
     console.error('Erreur import batch:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
-
-// ============ ROUTE D'IMPORT EXCEL (FICHIER) ============
 
 app.post('/api/users/import', authMiddleware, adminMiddleware, upload.single('file'), async (req, res) => {
   try {
@@ -797,7 +819,6 @@ app.post('/api/users/import', authMiddleware, adminMiddleware, upload.single('fi
       return res.status(400).json({ success: false, message: 'Le fichier est vide' });
     }
     
-    // Transformer les données Excel
     const usersToImport = data.map(row => ({
       nom: (row.nom || row.Nom || row.NAME || row.name || '').toString().trim(),
       prenom: (row.prenom || row.Prenom || row.FirstName || '').toString().trim(),
@@ -815,7 +836,6 @@ app.post('/api/users/import', authMiddleware, adminMiddleware, upload.single('fi
     
     for (const userData of usersToImport) {
       try {
-        // Normaliser le rôle
         let role = userData.role;
         if (role === 'formateur' || role === 'professeur') role = 'formateur';
         else if (role === 'admin' || role === 'administrateur') role = 'admin';
@@ -836,6 +856,12 @@ app.post('/api/users/import', authMiddleware, adminMiddleware, upload.single('fi
         const plainPassword = Math.random().toString(36).slice(-8) + Math.floor(Math.random() * 1000);
         const hashedPassword = await bcrypt.hash(plainPassword, 10);
         
+        const validationToken = jwt.sign(
+          { email: userData.email, matricule: matricule },
+          process.env.JWT_SECRET || 'secret_key_2026',
+          { expiresIn: '7d' }
+        );
+        
         const newUser = new User({
           nom: userData.nom,
           prenom: userData.prenom,
@@ -844,11 +870,16 @@ app.post('/api/users/import', authMiddleware, adminMiddleware, upload.single('fi
           matricule: matricule,
           password: hashedPassword,
           role: role,
-          isActive: true,
+          isActive: false,
+          isEmailValidated: false,
+          validationToken: validationToken,
+          status: 'pending',
           createdAt: new Date()
         });
         
         await newUser.save();
+        
+        const emailResult = await emailService.sendWelcomeValidationEmail(newUser, plainPassword);
         
         createdUsers.push({
           id: newUser._id,
@@ -857,9 +888,11 @@ app.post('/api/users/import', authMiddleware, adminMiddleware, upload.single('fi
           email: newUser.email,
           matricule: newUser.matricule,
           role: newUser.role,
-          temporaryPassword: plainPassword
+          temporaryPassword: plainPassword,
+          emailSent: emailResult.success
         });
         
+        console.log(`✅ Utilisateur créé: ${userData.nom} ${userData.prenom}`);
       } catch (error) {
         errors.push({ email: userData.email, error: error.message });
       }
@@ -868,7 +901,7 @@ app.post('/api/users/import', authMiddleware, adminMiddleware, upload.single('fi
     res.json({
       success: true,
       message: `${createdUsers.length} utilisateur(s) créé(s), ${errors.length} erreur(s)`,
-      data: { created: createdUsers, errors, totalProcessed: usersToImport.length }
+      data: { created: createdUsers, errors, totalProcessed: usersToImport.length, emailsSent: createdUsers.filter(u => u.emailSent).length }
     });
     
   } catch (error) {
@@ -886,6 +919,8 @@ app.get('/api/users/stats', authMiddleware, adminMiddleware, async (req, res) =>
     const totalFormateurs = await User.countDocuments({ role: 'formateur' });
     const totalAdmins = await User.countDocuments({ role: 'admin' });
     const activeUsers = await User.countDocuments({ isActive: true });
+    const emailValidated = await User.countDocuments({ isEmailValidated: true });
+    const pendingApproval = await User.countDocuments({ isEmailValidated: true, isActive: false });
     
     res.json({
       success: true,
@@ -895,7 +930,9 @@ app.get('/api/users/stats', authMiddleware, adminMiddleware, async (req, res) =>
         formateurs: totalFormateurs,
         admins: totalAdmins,
         actifs: activeUsers,
-        inactifs: totalUsers - activeUsers
+        inactifs: totalUsers - activeUsers,
+        emailValidated: emailValidated,
+        pendingApproval: pendingApproval
       }
     });
   } catch (error) {
@@ -903,346 +940,73 @@ app.get('/api/users/stats', authMiddleware, adminMiddleware, async (req, res) =>
   }
 });
 
-// Route debug
-app.get('/api/debug/users', async (req, res) => {
-  try {
-    const users = await User.find({}).select('-password');
-    res.json({ total: users.length, users });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-// ============ ROUTES CHATBOT ============
-
-async function analyzeIntent(message) {
-  const lowerMsg = message.toLowerCase();
-  
-  const intents = {
-    'formation': ['formation', 'cours', 'programme', 'apprendre', 'domaine'],
-    'inscription': ['inscription', 'postuler', 'candidater', 'concours'],
-    'contact': ['contact', 'email', 'téléphone', 'adresse'],
-    'statistiques': ['statistique', 'chiffre', 'nombre', 'combien']
-  };
-  
-  for (const [intent, keywords] of Object.entries(intents)) {
-    for (const keyword of keywords) {
-      if (lowerMsg.includes(keyword)) {
-        return { type: intent };
-      }
-    }
-  }
-  
-  return { type: 'general' };
-}
-
-async function generateResponse(message, intent) {
-  switch (intent.type) {
-    case 'formation':
-      const formations = await Formation.find().limit(3);
-      if (formations.length > 0) {
-        let response = "📚 **Nos formations disponibles** :\n\n";
-        formations.forEach((f, i) => {
-          response += `${i+1}. **${f.titre}**\n   ${f.description.substring(0, 100)}...\n   📍 Domaine: ${f.domaine}\n   ⏱️ Durée: ${f.duree}\n\n`;
-        });
-        return response;
-      }
-      return "📚 Nous proposons des formations dans 3 domaines : Services Postaux, Monétique & IT, et Gestion Financière.";
-    
-    case 'inscription':
-      return "📝 **Comment postuler ?**\n\n1️⃣ Créez votre compte\n2️⃣ Complétez votre profil\n3️⃣ Sélectionnez votre formation\n4️⃣ Soumettez votre candidature";
-    
-    case 'contact':
-      return "📞 **Nous contacter** :\n📍 Alger, Bir Mourad Raïs\n📧 formation@poste.dz\n📱 021 XX XX XX";
-    
-    case 'statistiques':
-      const totalUsers = await User.countDocuments();
-      const totalFormateurs = await User.countDocuments({ role: 'formateur' });
-      const totalApprenants = await User.countDocuments({ role: 'apprenant' });
-      return `📊 **Statistiques** :\n👥 Utilisateurs: ${totalUsers}\n🎓 Formateurs: ${totalFormateurs}\n📚 Apprenants: ${totalApprenants}`;
-    
-    default:
-      return "🤔 Je suis là pour vous aider !\n\n• 📚 **Formations** : Détails sur nos programmes\n• 📝 **Inscription** : Comment postuler\n• 📞 **Contact** : Nos coordonnées\n• 📊 **Statistiques** : Chiffres clés\n\nPosez-moi une question sur ces sujets !";
-  }
-}
-
-app.post('/api/chatbot/message', async (req, res) => {
-  try {
-    const { message, userId } = req.body;
-    
-    if (!message) {
-      return res.status(400).json({ success: false, error: "Message requis" });
-    }
-    
-    const intent = await analyzeIntent(message);
-    const response = await generateResponse(message, intent);
-    
-    if (userId) {
-      let chatHistory = await ChatHistory.findOne({ userId });
-      if (!chatHistory) {
-        chatHistory = new ChatHistory({ userId, messages: [] });
-      }
-      
-      chatHistory.messages.push(
-        { role: 'user', content: message, timestamp: new Date() },
-        { role: 'assistant', content: response, timestamp: new Date() }
-      );
-      chatHistory.updatedAt = new Date();
-      await chatHistory.save();
-    }
-    
-    res.json({ success: true, response: response, intent: intent.type });
-    
-  } catch (error) {
-    console.error('Erreur chatbot:', error);
-    res.status(500).json({ success: false, response: "Erreur technique" });
-  }
-});
-
-// Initialisation des données par défaut
-app.post('/api/chatbot/init-data', async (req, res) => {
-  try {
-    const formationsExist = await Formation.countDocuments();
-    if (formationsExist === 0) {
-      const defaultFormations = [
-        {
-          titre: "Agent des Services Postaux",
-          description: "Formation complète pour maîtriser l'accueil client, la gestion du courrier et les opérations postales.",
-          domaine: "Services Postaux",
-          duree: "6 mois",
-          wilayas: ["Alger", "Oran", "Constantine"],
-          placesDisponibles: 120
-        },
-        {
-          titre: "Technicien en Monétique",
-          description: "Maintenance des automates bancaires, support technique et gestion des services numériques.",
-          domaine: "Monétique & IT",
-          duree: "8 mois",
-          wilayas: ["Alger", "Oran"],
-          placesDisponibles: 60
-        }
-      ];
-      await Formation.insertMany(defaultFormations);
-      console.log('✅ Formations par défaut ajoutées');
-    }
-    
-    res.json({ success: true, message: "Données initialisées" });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 // ============ ROUTES FORMATIONS ============
 
-// GET - Récupérer toutes les formations
 app.get('/api/formations', async (req, res) => {
   try {
-    console.log('📚 Récupération des formations...');
-    
     const formations = await Formation.find().sort({ createdAt: -1 });
-    
-    console.log(`✅ ${formations.length} formations trouvées`);
-    
-    res.status(200).json({ 
-      success: true, 
-      data: formations 
-    });
+    res.json({ success: true, data: formations });
   } catch (error) {
-    console.error('❌ Erreur:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message 
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// POST - Créer une formation
 app.post('/api/formations', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    console.log('📝 Création formation:', req.body.titre);
-    
-    const formationData = {
-      titre: req.body.titre,
-      description: req.body.description,
-      domaine: req.body.domaine,
-      duree: req.body.duree,
-      prerequis: req.body.prerequis || '',
-      debouches: req.body.debouches || '',
-      wilayas: req.body.wilayas || [],
-      placesDisponibles: req.body.placesDisponibles || 0,
-      dateDebut: req.body.dateDebut || null,
-      formateurId: req.body.formateurId || null,
-      createdAt: new Date()
-    };
-    
-    const formation = new Formation(formationData);
+    const formation = new Formation(req.body);
     await formation.save();
-    
-    console.log('✅ Formation créée:', formation._id);
-    
-    res.status(201).json({ 
-      success: true, 
-      data: formation, 
-      message: 'Formation créée avec succès' 
-    });
+    res.status(201).json({ success: true, data: formation, message: 'Formation créée' });
   } catch (error) {
-    console.error('❌ Erreur création:', error);
-    res.status(400).json({ 
-      success: false, 
-      message: error.message 
-    });
+    res.status(400).json({ success: false, message: error.message });
   }
 });
 
-// PUT - Mettre à jour une formation
 app.put('/api/formations/:id', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    console.log('✏️ Mise à jour formation:', req.params.id);
-    
-    const updateData = {
-      titre: req.body.titre,
-      description: req.body.description,
-      domaine: req.body.domaine,
-      duree: req.body.duree,
-      prerequis: req.body.prerequis,
-      debouches: req.body.debouches,
-      wilayas: req.body.wilayas,
-      placesDisponibles: req.body.placesDisponibles,
-      dateDebut: req.body.dateDebut,
-      formateurId: req.body.formateurId,
-      updatedAt: new Date()
-    };
-    
-    const formation = await Formation.findByIdAndUpdate(
-      req.params.id,
-      updateData,
-      { new: true, runValidators: true }
-    );
-    
+    const formation = await Formation.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!formation) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Formation non trouvée' 
-      });
+      return res.status(404).json({ success: false, message: 'Formation non trouvée' });
     }
-    
-    console.log('✅ Formation mise à jour');
-    
-    res.json({ 
-      success: true, 
-      data: formation, 
-      message: 'Formation mise à jour' 
-    });
+    res.json({ success: true, data: formation, message: 'Formation mise à jour' });
   } catch (error) {
-    console.error('❌ Erreur mise à jour:', error);
-    res.status(400).json({ 
-      success: false, 
-      message: error.message 
-    });
+    res.status(400).json({ success: false, message: error.message });
   }
 });
 
-// DELETE - Supprimer une formation
 app.delete('/api/formations/:id', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    console.log('🗑️ Suppression formation:', req.params.id);
-    
     const formation = await Formation.findByIdAndDelete(req.params.id);
-    
     if (!formation) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Formation non trouvée' 
-      });
+      return res.status(404).json({ success: false, message: 'Formation non trouvée' });
     }
-    
-    console.log('✅ Formation supprimée');
-    
-    res.json({ 
-      success: true, 
-      message: 'Formation supprimée avec succès' 
-    });
+    res.json({ success: true, message: 'Formation supprimée' });
   } catch (error) {
-    console.error('❌ Erreur suppression:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message 
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
+// ============ ROUTES INSCRIPTIONS ============
 
-
-
-
-
-// Dans server.js - Route GET /api/formations (sans auth pour les apprenants)
-app.get('/api/formations', async (req, res) => {
-  try {
-    console.log('📚 Récupération des formations...');
-    
-    const formations = await Formation.find().sort({ createdAt: -1 });
-    
-    console.log(`✅ ${formations.length} formations trouvées`);
-    
-    res.status(200).json({ 
-      success: true, 
-      data: formations 
-    });
-  } catch (error) {
-    console.error('❌ Erreur:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message 
-    });
-  }
-});
-// POST - S'inscrire à une formation (apprenant)
 app.post("/api/formations/inscrire", authMiddleware, async (req, res) => {
   try {
     const { formationId, formationTitre, formationDomaine, message } = req.body;
     const apprenantId = req.userId;
-    const apprenantRole = req.userRole;
-
-    console.log("📝 Demande d'inscription reçue:", {
-      formationId,
-      apprenantId,
-      apprenantRole,
-    });
-
-    // Vérifier que l'utilisateur est un apprenant
-    if (apprenantRole !== "apprenant") {
-      return res.status(403).json({
-        success: false,
-        message: "Seuls les apprenants peuvent s'inscrire aux formations",
-      });
+    
+    if (req.userRole !== "apprenant") {
+      return res.status(403).json({ success: false, message: "Seuls les apprenants peuvent s'inscrire" });
     }
-
-    // Vérifier si la formation existe
+    
     const formation = await Formation.findById(formationId);
     if (!formation) {
-      return res.status(404).json({
-        success: false,
-        message: "Formation non trouvée",
-      });
+      return res.status(404).json({ success: false, message: "Formation non trouvée" });
     }
-
-    // Vérifier si une inscription existe déjà
-    const existingInscription = await Inscription.findOne({
-      apprenantId,
-      formationId,
-      statut: { $in: ["en_attente", "confirmee"] },
-    });
-
+    
+    const existingInscription = await Inscription.findOne({ apprenantId, formationId, statut: { $in: ["en_attente", "confirmee"] } });
+    
     if (existingInscription) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Vous avez déjà une demande d'inscription pour cette formation",
-      });
+      return res.status(400).json({ success: false, message: "Vous avez déjà une demande en cours" });
     }
-
-    // Créer la demande d'inscription
+    
     const inscription = new Inscription({
       apprenantId,
       formationId,
@@ -1250,146 +1014,147 @@ app.post("/api/formations/inscrire", authMiddleware, async (req, res) => {
       formationDomaine: formationDomaine || formation.domaine,
       messageApprenant: message || "",
       statut: "en_attente",
-      demandeEnvoyeeLe: new Date(),
+      demandeEnvoyeeLe: new Date()
     });
-
+    
     await inscription.save();
-
-    // Récupérer les admins pour leur envoyer une notification
+    
     const admins = await User.find({ role: "admin" });
     const apprenant = await User.findById(apprenantId);
-    const apprenantNom = `${apprenant.prenom} ${apprenant.nom}`;
-
-    // Créer des notifications pour chaque admin
+    
     for (const admin of admins) {
       await Notification.create({
         userId: admin._id,
         type: "inscription",
         title: "Nouvelle demande d'inscription",
-        message: `${apprenantNom} souhaite s'inscrire à la formation "${formation.titre}"`,
-        data: {
-          inscriptionId: inscription._id,
-          apprenantId: apprenantId,
-          apprenantNom: apprenantNom,
-          formationId: formationId,
-          formationTitre: formation.titre,
-        },
-        read: false,
+        message: `${apprenant.prenom} ${apprenant.nom} souhaite s'inscrire à "${formation.titre}"`,
+        data: { inscriptionId: inscription._id, formationId, formationTitre: formation.titre },
+        read: false
       });
     }
-
-    res.status(201).json({
-      success: true,
-      message: "Votre demande d'inscription a été envoyée à l'administrateur",
-      data: inscription,
-    });
+    
+    res.status(201).json({ success: true, message: "Demande envoyée", data: inscription });
   } catch (error) {
     console.error("Erreur inscription:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
-// GET - Obtenir mes inscriptions (apprenant)
-app.get(
-  "/api/formations/mes-inscriptions",
-  authMiddleware,
-  async (req, res) => {
-    try {
-      const inscriptions = await Inscription.find({
-        apprenantId: req.userId,
-      }).sort({ demandeEnvoyeeLe: -1 });
 
-      res.json({
-        success: true,
-        data: inscriptions,
-      });
-    } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+app.get("/api/formations/mes-inscriptions", authMiddleware, async (req, res) => {
+  try {
+    const inscriptions = await Inscription.find({ apprenantId: req.userId }).sort({ demandeEnvoyeeLe: -1 });
+    res.json({ success: true, data: inscriptions });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.get("/api/formations/admin/inscriptions", authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const inscriptions = await Inscription.find().sort({ demandeEnvoyeeLe: -1 }).populate("apprenantId", "nom prenom matricule email");
+    res.json({ success: true, data: inscriptions });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.put("/api/formations/inscription/:id/repondre", authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { statut, message } = req.body;
+    const inscription = await Inscription.findById(req.params.id);
+    
+    if (!inscription) {
+      return res.status(404).json({ success: false, message: "Inscription non trouvée" });
     }
-  },
-);
-app.get(
-  "/api/formations/admin/inscriptions",
-  authMiddleware,
-  adminMiddleware,
-  async (req, res) => {
-    try {
-      const inscriptions = await Inscription.find()
-        .sort({ demandeEnvoyeeLe: -1 })
-        .populate("apprenantId", "nom prenom matricule email");
+    
+    inscription.statut = statut;
+    inscription.messageAdmin = message || "";
+    inscription.reponseLe = new Date();
+    await inscription.save();
+    
+    await Notification.create({
+      userId: inscription.apprenantId,
+      type: "inscription",
+      title: statut === "confirmee" ? "✅ Inscription acceptée" : "❌ Inscription refusée",
+      message: statut === "confirmee" ? `Votre inscription à "${inscription.formationTitre}" a été acceptée` : `Votre inscription à "${inscription.formationTitre}" a été refusée`,
+      data: { inscriptionId: inscription._id, statut },
+      read: false
+    });
+    
+    res.json({ success: true, message: `Inscription ${statut === "confirmee" ? "acceptée" : "refusée"}`, data: inscription });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
 
-      res.json({
-        success: true,
-        data: inscriptions,
-      });
-    } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+// ============ ROUTES CHATBOT ============
+
+app.post('/api/chatbot/message', async (req, res) => {
+  try {
+    const { message, userId } = req.body;
+    
+    if (!message) {
+      return res.status(400).json({ success: false, response: "Message requis" });
     }
-  },
-);
-app.put(
-  "/api/formations/inscription/:id/repondre",
-  authMiddleware,
-  adminMiddleware,
-  async (req, res) => {
-    try {
-      const { statut, message } = req.body;
-      const inscriptionId = req.params.id;
-
-      if (!["confirmee", "refusee"].includes(statut)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Statut invalide. Utilisez "confirmee" ou "refusee"',
+    
+    let response = "Je suis là pour vous aider ! Posez-moi une question sur les formations, les inscriptions ou les statistiques.";
+    
+    const lowerMsg = message.toLowerCase();
+    
+    if (lowerMsg.includes('formation') || lowerMsg.includes('cours')) {
+      const formations = await Formation.find().limit(3);
+      if (formations.length > 0) {
+        response = "📚 **Nos formations** :\n";
+        formations.forEach((f, i) => {
+          response += `${i+1}. **${f.titre}** - ${f.description.substring(0, 100)}...\n`;
         });
+      } else {
+        response = "📚 Nous proposons des formations dans 3 domaines : Services Postaux, Monétique & IT, et Gestion Financière.";
       }
-
-      const inscription = await Inscription.findById(inscriptionId);
-      if (!inscription) {
-        return res
-          .status(404)
-          .json({ success: false, message: "Inscription non trouvée" });
-      }
-
-      inscription.statut = statut;
-      inscription.messageAdmin = message || "";
-      inscription.reponseLe = new Date();
-      await inscription.save();
-
-      // Notifier l'apprenant
-      const notificationMessage =
-        statut === "confirmee"
-          ? `✅ Votre inscription à "${inscription.formationTitre}" a été acceptée !`
-          : `❌ Votre inscription à "${inscription.formationTitre}" a été refusée.`;
-
-      await Notification.create({
-        userId: inscription.apprenantId,
-        type: "inscription",
-        title:
-          statut === "confirmee"
-            ? "✅ Inscription acceptée"
-            : "❌ Inscription refusée",
-        message: notificationMessage,
-        data: {
-          inscriptionId: inscription._id,
-          formationTitre: inscription.formationTitre,
-          statut: statut,
-          messageAdmin: message,
-        },
-        read: false,
-      });
-
-      res.json({
-        success: true,
-        message: `Inscription ${statut === "confirmee" ? "acceptée" : "refusée"}`,
-        data: inscription,
-      });
-    } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
+    } else if (lowerMsg.includes('inscription') || lowerMsg.includes('postuler')) {
+      response = "📝 **Comment postuler ?**\n1️⃣ Créez votre compte\n2️⃣ Complétez votre profil\n3️⃣ Sélectionnez votre formation\n4️⃣ Soumettez votre candidature";
+    } else if (lowerMsg.includes('contact') || lowerMsg.includes('email')) {
+      response = "📞 **Nous contacter** :\n📍 Alger\n📧 formation@poste.dz\n📱 021 XX XX XX";
+    } else if (lowerMsg.includes('statistique') || lowerMsg.includes('nombre')) {
+      const totalUsers = await User.countDocuments();
+      response = `📊 **Statistiques** :\n👥 Utilisateurs: ${totalUsers}`;
     }
-  },
-);
-app.use("/api/cahier-suivi", authMiddleware, cahierSuiviRoutes);
-// ============ DÉMARRAGE DU SERVEUR ============
+    
+    if (userId) {
+      let chatHistory = await ChatHistory.findOne({ userId });
+      if (!chatHistory) {
+        chatHistory = new ChatHistory({ userId, messages: [] });
+      }
+      chatHistory.messages.push({ role: 'user', content: message }, { role: 'assistant', content: response });
+      chatHistory.updatedAt = new Date();
+      await chatHistory.save();
+    }
+    
+    res.json({ success: true, response: response });
+  } catch (error) {
+    console.error('Erreur chatbot:', error);
+    res.status(500).json({ success: false, response: "Erreur technique" });
+  }
+});
 
+// ============ CAHIER SUIVI ROUTES ============
+app.use("/api/cahier-suivi", authMiddleware, cahierSuiviRoutes);
+app.get('/api/debug/user/:matricule', async (req, res) => {
+  try {
+    const user = await User.findOne({ matricule: req.params.matricule });
+    if (!user) return res.json({ error: 'User not found' });
+    res.json({
+      matricule: user.matricule,
+      role: user.role,
+      isActive: user.isActive,
+      isEmailValidated: user.isEmailValidated,
+      status: user.status
+    });
+  } catch (error) {
+    res.json({ error: error.message });
+  }
+});
+// ============ DÉMARRAGE ============
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
@@ -1397,12 +1162,16 @@ app.listen(PORT, () => {
   console.log(`🚀 Serveur démarré sur http://localhost:${PORT}`);
   console.log('========================================');
   console.log('📋 ENDPOINTS DISPONIBLES :');
-  console.log(`   🔧 Setup Admin: POST /api/auth/setup-admin`);
-  console.log(`   🔐 Login:       POST /api/auth/login`);
-  console.log(`   👥 Users:       GET  /api/users`);
-  console.log(`   📥 Import:      POST /api/users/import`);
-  console.log(`   📥 Import Batch: POST /api/users/import-batch`);
-  console.log(`   📊 Stats:       GET  /api/users/stats`);
-  console.log(`   💬 Chatbot:     POST /api/chatbot/message`);
+  console.log(`   🔧 Setup Admin:    POST /api/auth/setup-admin`);
+  console.log(`   🔐 Login:          POST /api/auth/login`);
+  console.log(`   ✅ Validate Email: GET  /api/auth/validate-account`);
+  console.log(`   ✅ Activate User:   PUT  /api/users/:userId/activate`);
+  console.log(`   👥 Users:          GET  /api/users`);
+  console.log(`   🔑 Reset MDP:      PUT  /api/users/:userId/reset-password`);
+  console.log(`   📥 Import:         POST /api/users/import`);
+  console.log(`   📊 Stats:          GET  /api/users/stats`);
+  console.log(`   📚 Formations:     GET  /api/formations`);
+  console.log(`   📝 Inscriptions:   POST /api/formations/inscrire`);
+  console.log(`   👤 Profile:        GET  /api/users/profile`);
   console.log('========================================\n');
 });
