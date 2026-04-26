@@ -48,7 +48,8 @@ const Profile = () => {
   const [successMessage, setSuccessMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [userEmail, setUserEmail] = useState("");
-  
+  const [avatarKey, setAvatarKey] = useState(Date.now());
+
   // États pour le changement de mot de passe
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [passwordData, setPasswordData] = useState({
@@ -65,13 +66,33 @@ const Profile = () => {
   const API_URL = process.env.REACT_APP_API_URL || "http://localhost:5000/api";
   const getAuthToken = () => localStorage.getItem("token");
 
-  // Charger le profil depuis le backend
+  // ========== FONCTION POUR FORCER LA MISE À JOUR DU HEADER ==========
+  const forceHeaderUpdate = (avatarUrl) => {
+    console.log("🔄 Force update header avec:", avatarUrl);
+
+    // Méthode 1: Événement personnalisé
+    window.dispatchEvent(
+      new CustomEvent("avatarUpdated", {
+        detail: { avatar: avatarUrl, timestamp: Date.now(), force: true },
+      }),
+    );
+
+    // Méthode 2: Déclencher un événement storage
+    window.dispatchEvent(new Event("storage"));
+
+    // Méthode 3: Forcer un re-rendu global
+    setTimeout(() => {
+      window.dispatchEvent(
+        new CustomEvent("profileUpdated", { detail: { avatar: avatarUrl } }),
+      );
+    }, 50);
+  };
+
+  // ========== CHARGEMENT DU PROFIL ==========
   const loadProfileFromBackend = async () => {
     try {
       const token = getAuthToken();
-      if (!token) {
-        return;
-      }
+      if (!token) return;
 
       const response = await axios.get(`${API_URL}/users/profile`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -96,9 +117,10 @@ const Profile = () => {
 
         localStorage.setItem("currentUser", JSON.stringify(user));
         await updateCurrentUser(user);
-        
-        // Émettre un événement pour mettre à jour la Sidebar
-        window.dispatchEvent(new CustomEvent("profileUpdated", { detail: user }));
+
+        if (user.avatar) {
+          forceHeaderUpdate(user.avatar);
+        }
       }
     } catch (error) {
       console.error("Erreur chargement:", error);
@@ -126,69 +148,7 @@ const Profile = () => {
     loadProfileFromBackend();
   }, []);
 
-  useEffect(() => {
-    const handleLoginSuccess = () => {
-      setTimeout(() => {
-        loadProfileFromBackend();
-      }, 500);
-    };
-
-    const handleProfileUpdated = (event) => {
-      if (event.detail) {
-        setFormData({
-          prenom: event.detail.prenom || "",
-          nom: event.detail.nom || "",
-          dateNaissance: event.detail.dateNaissance
-            ? event.detail.dateNaissance.split("T")[0]
-            : "",
-          sexe: event.detail.sexe || "",
-          telephone: event.detail.telephone || "",
-          adresse: event.detail.adresse || "",
-          avatar: event.detail.avatar || null,
-        });
-        setAvatarPreview(event.detail.avatar || null);
-        setUserEmail(event.detail.email || "");
-      }
-    };
-
-    const handleStorageChange = (e) => {
-      if (e.key === "currentUser" && e.newValue) {
-        const user = JSON.parse(e.newValue);
-        setFormData({
-          prenom: user.prenom || "",
-          nom: user.nom || "",
-          dateNaissance: user.dateNaissance
-            ? user.dateNaissance.split("T")[0]
-            : "",
-          sexe: user.sexe || "",
-          telephone: user.telephone || "",
-          adresse: user.adresse || "",
-          avatar: user.avatar || null,
-        });
-        setAvatarPreview(user.avatar || null);
-        setUserEmail(user.email || "");
-      }
-    };
-
-    window.addEventListener("loginSuccess", handleLoginSuccess);
-    window.addEventListener("profileUpdated", handleProfileUpdated);
-    window.addEventListener("userDataChanged", handleProfileUpdated);
-    window.addEventListener("storage", handleStorageChange);
-
-    return () => {
-      window.removeEventListener("loginSuccess", handleLoginSuccess);
-      window.removeEventListener("profileUpdated", handleProfileUpdated);
-      window.removeEventListener("userDataChanged", handleProfileUpdated);
-      window.removeEventListener("storage", handleStorageChange);
-    };
-  }, []);
-
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-    if (error) setError("");
-  };
-
+  // ========== GESTION DE L'IMAGE ==========
   const compressImage = (
     base64String,
     maxWidth = 150,
@@ -311,21 +271,31 @@ const Profile = () => {
           setAvatarPreview(serverAvatarUrl);
           setFormData((prev) => ({ ...prev, avatar: serverAvatarUrl }));
           setSuccessMessage("✅ Photo de profil uploadée avec succès !");
-          
-          // Mettre à jour le localStorage et le contexte
-          const updatedUser = { ...currentUser, avatar: serverAvatarUrl };
+
+          const updatedUser = {
+            ...currentUser,
+            avatar: serverAvatarUrl,
+            prenom: currentUser?.prenom || formData.prenom,
+            nom: currentUser?.nom || formData.nom,
+            email: currentUser?.email || userEmail,
+          };
+
+          if (updateCurrentUser) {
+            await updateCurrentUser(updatedUser);
+          }
+
           localStorage.setItem("currentUser", JSON.stringify(updatedUser));
-          await updateCurrentUser(updatedUser);
-          
-          // Émettre événement pour Sidebar
-          window.dispatchEvent(new CustomEvent("avatarUpdated", { detail: { avatar: serverAvatarUrl } }));
-          window.dispatchEvent(new CustomEvent("profileUpdated", { detail: updatedUser }));
+          forceHeaderUpdate(serverAvatarUrl);
+          setAvatarKey(Date.now());
+
+          console.log("✅ Upload terminé, header mis à jour");
         } else {
           setAvatarPreview(compressedImage);
           setFormData((prev) => ({ ...prev, avatar: compressedImage }));
           setSuccessMessage(
             "✅ Photo sélectionnée, n'oubliez pas d'enregistrer !",
           );
+          forceHeaderUpdate(compressedImage);
         }
 
         setUploadProgress(100);
@@ -351,7 +321,28 @@ const Profile = () => {
       fileInputRef.current.value = "";
     }
     setSuccessMessage("Photo supprimée, n'oubliez pas d'enregistrer !");
+
+    const savedUser = localStorage.getItem("currentUser");
+    if (savedUser) {
+      try {
+        const user = JSON.parse(savedUser);
+        user.avatar = null;
+        localStorage.setItem("currentUser", JSON.stringify(user));
+        if (updateCurrentUser) {
+          updateCurrentUser(user);
+        }
+      } catch (e) {}
+    }
+
+    forceHeaderUpdate(null);
     setTimeout(() => setSuccessMessage(""), 2000);
+  };
+
+  // ========== GESTION DU FORMULAIRE ==========
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+    if (error) setError("");
   };
 
   const handleSubmit = async (e) => {
@@ -411,11 +402,11 @@ const Profile = () => {
       window.dispatchEvent(
         new CustomEvent("userDataChanged", { detail: updatedUserData }),
       );
-      window.dispatchEvent(
-        new CustomEvent("avatarUpdated", {
-          detail: { avatar: updatedUserData.avatar },
-        }),
-      );
+
+      if (updatedUserData.avatar) {
+        forceHeaderUpdate(updatedUserData.avatar);
+      }
+
       window.dispatchEvent(new Event("storage"));
 
       if (refreshUserData) {
@@ -436,7 +427,7 @@ const Profile = () => {
     }
   };
 
-  // Gestion du changement de mot de passe
+  // ========== GESTION DU MOT DE PASSE ==========
   const handlePasswordChange = (e) => {
     const { name, value } = e.target;
     setPasswordData((prev) => ({ ...prev, [name]: value }));
@@ -459,7 +450,9 @@ const Profile = () => {
     }
 
     if (passwordData.currentPassword === passwordData.newPassword) {
-      setPasswordError("Le nouveau mot de passe doit être différent de l'ancien");
+      setPasswordError(
+        "Le nouveau mot de passe doit être différent de l'ancien",
+      );
       return;
     }
 
@@ -480,7 +473,7 @@ const Profile = () => {
         },
         {
           headers: { Authorization: `Bearer ${token}` },
-        }
+        },
       );
 
       if (response.data.success) {
@@ -494,16 +487,24 @@ const Profile = () => {
         setTimeout(() => setPasswordSuccess(""), 4000);
       }
     } catch (err) {
-      setPasswordError(err.response?.data?.message || "Erreur lors du changement de mot de passe");
+      setPasswordError(
+        err.response?.data?.message ||
+          "Erreur lors du changement de mot de passe",
+      );
     } finally {
       setIsPasswordLoading(false);
     }
   };
 
+  // ========== COMPOSANT AVATAR ==========
   const AvatarImage = ({ src, alt, className }) => {
     const [imgError, setImgError] = useState(false);
 
-    if (!src || imgError) {
+    useEffect(() => {
+      setImgError(false);
+    }, [src]);
+
+    if (!src || imgError || src === "null" || src === "undefined") {
       return (
         <div className="w-full h-full flex items-center justify-center text-slate-300">
           <User size={80} strokeWidth={1} />
@@ -513,6 +514,7 @@ const Profile = () => {
 
     return (
       <img
+        key={avatarKey}
         src={src}
         alt={alt}
         className={className}
@@ -521,6 +523,7 @@ const Profile = () => {
     );
   };
 
+  // ========== RENDU ==========
   if (!currentUser && !localStorage.getItem("currentUser")) {
     return (
       <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center">
@@ -534,6 +537,7 @@ const Profile = () => {
 
   return (
     <div className="min-h-screen bg-[#f8fafc] py-12 px-4 md:px-8">
+      {/* Messages de notification */}
       <div className="fixed top-8 right-8 z-50 flex flex-col gap-4">
         {successMessage && (
           <div className="flex items-center gap-3 bg-white border-l-4 border-emerald-500 text-slate-800 px-6 py-4 rounded-xl shadow-2xl animate-in slide-in-from-top-2">
@@ -564,7 +568,7 @@ const Profile = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Card Avatar */}
+          {/* Carte Avatar */}
           <div className="lg:col-span-1">
             <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200 sticky top-8">
               <div className="flex flex-col items-center">
@@ -623,7 +627,6 @@ const Profile = () => {
                     {formData.prenom} {formData.nom}
                   </h2>
 
-                  {/* Email non modifiable */}
                   <div className="mt-3 flex items-center justify-center gap-2 text-slate-500 bg-slate-50 px-4 py-2 rounded-xl">
                     <Mail size={14} className="text-[#0055a2]" />
                     <span className="text-sm">{userEmail}</span>
@@ -814,13 +817,18 @@ const Profile = () => {
                   <Lock size={20} className="text-amber-600" />
                   Sécurité
                 </h3>
-                <div className={`text-amber-600 transition-transform ${showPasswordForm ? "rotate-180" : ""}`}>
+                <div
+                  className={`text-amber-600 transition-transform ${showPasswordForm ? "rotate-180" : ""}`}
+                >
                   ▼
                 </div>
               </button>
 
               {showPasswordForm && (
-                <form onSubmit={handlePasswordSubmit} className="mt-6 space-y-4">
+                <form
+                  onSubmit={handlePasswordSubmit}
+                  className="mt-6 space-y-4"
+                >
                   {passwordError && (
                     <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
                       {passwordError}
@@ -832,7 +840,10 @@ const Profile = () => {
                       Mot de passe actuel
                     </label>
                     <div className="relative">
-                      <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <Lock
+                        size={16}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                      />
                       <input
                         type={showCurrentPassword ? "text" : "password"}
                         name="currentPassword"
@@ -843,10 +854,16 @@ const Profile = () => {
                       />
                       <button
                         type="button"
-                        onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                        onClick={() =>
+                          setShowCurrentPassword(!showCurrentPassword)
+                        }
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                       >
-                        {showCurrentPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                        {showCurrentPassword ? (
+                          <EyeOff size={16} />
+                        ) : (
+                          <Eye size={16} />
+                        )}
                       </button>
                     </div>
                   </div>
@@ -856,7 +873,10 @@ const Profile = () => {
                       Nouveau mot de passe
                     </label>
                     <div className="relative">
-                      <Key size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <Key
+                        size={16}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                      />
                       <input
                         type={showNewPassword ? "text" : "password"}
                         name="newPassword"
@@ -870,7 +890,11 @@ const Profile = () => {
                         onClick={() => setShowNewPassword(!showNewPassword)}
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                       >
-                        {showNewPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                        {showNewPassword ? (
+                          <EyeOff size={16} />
+                        ) : (
+                          <Eye size={16} />
+                        )}
                       </button>
                     </div>
                   </div>
@@ -880,7 +904,10 @@ const Profile = () => {
                       Confirmer le nouveau mot de passe
                     </label>
                     <div className="relative">
-                      <BadgeCheck size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <BadgeCheck
+                        size={16}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                      />
                       <input
                         type="password"
                         name="confirmPassword"
@@ -933,14 +960,17 @@ const Profile = () => {
                   <Clock size={20} className="text-[#0055a2]" />
                 </div>
                 <div>
-                  <h4 className="font-bold text-slate-800">Dernière connexion</h4>
+                  <h4 className="font-bold text-slate-800">
+                    Dernière connexion
+                  </h4>
                   <p className="text-sm text-slate-600 mt-1">
-                    {currentUser?.lastLogin 
+                    {currentUser?.lastLogin
                       ? new Date(currentUser.lastLogin).toLocaleString()
                       : "Première connexion"}
                   </p>
                   <p className="text-xs text-slate-400 mt-2">
-                    Compte créé le {currentUser?.createdAt 
+                    Compte créé le{" "}
+                    {currentUser?.createdAt
                       ? new Date(currentUser.createdAt).toLocaleDateString()
                       : "Date inconnue"}
                   </p>
