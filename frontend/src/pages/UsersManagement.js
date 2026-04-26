@@ -7,14 +7,22 @@ import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import { 
   Users, UserPlus, GraduationCap, Crown, Search, 
-  Mail, Phone, Calendar, 
   Trash2, Key, RefreshCw, Download, 
   ChevronLeft, ChevronRight, Eye,
-  Activity, AlertCircle,
-  Lock, Power, PowerOff, Copy, Check,
-  ShieldCheck, ShieldAlert, Send,
-  X, Filter, MoreVertical
+  Power, PowerOff, 
+  ShieldCheck, ShieldAlert,
+  X, Filter, Check
 } from 'lucide-react';
+
+// ✅ FONCTION getRoleBadge DÉFINIE EN DEHORS DU COMPOSANT
+const getRoleBadge = (role) => {
+  const badges = {
+    admin: { icon: Crown, text: 'Admin', class: 'bg-red-500' },
+    formateur: { icon: GraduationCap, text: 'Formateur', class: 'bg-blue-500' },
+    apprenant: { icon: Users, text: 'Apprenant', class: 'bg-emerald-500' }
+  };
+  return badges[role] || badges.apprenant;
+};
 
 const UsersManagement = () => {
   const [users, setUsers] = useState([]);
@@ -27,7 +35,6 @@ const UsersManagement = () => {
   const [validationFilter, setValidationFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedUser, setSelectedUser] = useState(null);
-  const [showUserModal, setShowUserModal] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [exporting, setExporting] = useState(false);
@@ -41,7 +48,6 @@ const UsersManagement = () => {
     apprenants: 0,
     formateurs: 0,
     admins: 0,
-    newThisMonth: 0,
     active: 0,
     inactive: 0,
     emailValidated: 0,
@@ -94,16 +100,11 @@ const UsersManagement = () => {
   };
 
   const calculateStats = (usersData) => {
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-    
     setStats({
       total: usersData.length,
       apprenants: usersData.filter(u => u.role === 'apprenant').length,
       formateurs: usersData.filter(u => u.role === 'formateur').length,
       admins: usersData.filter(u => u.role === 'admin').length,
-      newThisMonth: usersData.filter(u => new Date(u.createdAt).getMonth() === currentMonth && new Date(u.createdAt).getFullYear() === currentYear).length,
       active: usersData.filter(u => u.isActive === true).length,
       inactive: usersData.filter(u => u.isActive === false).length,
       emailValidated: usersData.filter(u => u.isEmailValidated === true).length,
@@ -142,18 +143,19 @@ const UsersManagement = () => {
     setTimeout(() => setSuccess(null), 5000);
   };
 
+  // ✅ Activation du compte (admin valide le compte après validation email)
   const activateUser = async (userId) => {
     const user = users.find(u => u.id === userId || u._id === userId);
     if (!user) return;
     
     if (!user.isEmailValidated) {
-      setError("Cet utilisateur n'a pas encore validé son email. Il doit d'abord cliquer sur le lien dans l'email.");
+      setError("Cet utilisateur n'a pas encore validé son email.");
       return;
     }
     
     setActivatingUser(userId);
     try {
-      const response = await axios.put(`${API_URL}/users/${userId}/activate`, {}, getAuthHeaders());
+      const response = await axios.put(`${API_URL}/admin/activate-user/${userId}`, {}, getAuthHeaders());
       if (response.data.success) {
         loadUsers();
         setSuccess(`✅ Compte de ${user.prenom} ${user.nom} activé avec succès. Un email lui a été envoyé.`);
@@ -246,7 +248,7 @@ const UsersManagement = () => {
         'Prénom': user.prenom,
         'Email': user.email || '',
         'Téléphone': user.telephone || '',
-        'Rôle': user.role === 'admin' ? 'Administrateur' : user.role === 'formateur' ? 'Formateur' : 'Apprenant',
+        'Rôle': user.role === 'admin' ? 'Administrateur' : user.role === 'formateur' ? (user.formateurType === 'enseignant' ? 'Enseignant' : 'Formateur') : 'Apprenant',
         'Statut': user.isActive ? 'Actif' : 'Inactif',
         'Email Validé': user.isEmailValidated ? 'Oui' : 'Non',
         'Date création': user.createdAt ? new Date(user.createdAt).toLocaleDateString('fr-FR') : ''
@@ -254,7 +256,6 @@ const UsersManagement = () => {
       const ws = XLSX.utils.json_to_sheet(exportData);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Utilisateurs");
-      ws['!cols'] = [{ wch: 15 }, { wch: 20 }, { wch: 20 }, { wch: 30 }, { wch: 15 }, { wch: 18 }, { wch: 12 }, { wch: 12 }, { wch: 15 }];
       const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
       saveAs(new Blob([excelBuffer]), `utilisateurs_${new Date().toISOString().split('T')[0]}.xlsx`);
       setSuccess(`${users.length} utilisateurs exportés`);
@@ -269,37 +270,24 @@ const UsersManagement = () => {
   const currentUsers = filteredUsers.slice(indexOfLastItem - itemsPerPage, indexOfLastItem);
   const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
 
-  const getRoleBadge = (role) => {
-    const badges = {
-      admin: { icon: Crown, text: 'Admin', class: 'bg-red-500' },
-      formateur: { icon: GraduationCap, text: 'Formateur', class: 'bg-blue-500' },
-      apprenant: { icon: Users, text: 'Apprenant', class: 'bg-emerald-500' }
-    };
-    return badges[role] || badges.apprenant;
-  };
-
   if (isLoading) return <LoadingSpinner />;
 
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
         
-        {/* Header - Version moderne et épurée */}
+        {/* Header */}
         <div className="mb-6 sm:mb-8">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
-                Utilisateurs
-              </h1>
-              <p className="text-sm text-gray-500 mt-1">
-                Gérez les comptes et les accès
-              </p>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Utilisateurs</h1>
+              <p className="text-sm text-gray-500 mt-1">Gérez les comptes et les accès</p>
             </div>
             <div className="flex gap-2 sm:gap-3">
               <button
                 onClick={exportUsers}
                 disabled={exporting}
-                className="px-4 sm:px-5 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all flex items-center gap-2 text-sm font-medium disabled:opacity-50 shadow-sm"
+                className="px-4 sm:px-5 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-all flex items-center gap-2 text-sm font-medium disabled:opacity-50 shadow-sm"
               >
                 {exporting ? (
                   <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-600 border-t-transparent"></div>
@@ -319,7 +307,7 @@ const UsersManagement = () => {
           </div>
         </div>
 
-        {/* Messages Toast */}
+        {/* Messages */}
         {success && (
           <div className="mb-4 p-3 sm:p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-3">
             <Check size={18} className="text-emerald-600 flex-shrink-0" />
@@ -331,7 +319,7 @@ const UsersManagement = () => {
         )}
         {error && (
           <div className="mb-4 p-3 sm:p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3">
-            <AlertCircle size={18} className="text-red-600 flex-shrink-0" />
+            <ShieldAlert size={18} className="text-red-600 flex-shrink-0" />
             <p className="text-red-700 text-sm flex-1">{error}</p>
             <button onClick={() => setError(null)} className="text-red-600 hover:text-red-800">
               <X size={16} />
@@ -339,30 +327,30 @@ const UsersManagement = () => {
           </div>
         )}
 
-        {/* Stats Cards - Design moderne */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 sm:gap-4 mb-6 sm:mb-8">
+        {/* Stats Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 sm:gap-4 mb-6 sm:mb-8">
           <StatCard icon={Users} label="Total" value={stats.total} color="indigo" />
           <StatCard icon={Users} label="Apprenants" value={stats.apprenants} color="emerald" />
           <StatCard icon={GraduationCap} label="Formateurs" value={stats.formateurs} color="blue" />
           <StatCard icon={Crown} label="Admins" value={stats.admins} color="red" />
           <StatCard icon={Power} label="Actifs" value={stats.active} color="teal" />
+          <StatCard icon={PowerOff} label="Inactifs" value={stats.inactive} color="gray" />
           <StatCard icon={ShieldCheck} label="Validés" value={stats.emailValidated} color="green" />
-          <StatCard icon={ShieldAlert} label="En attente" value={stats.pendingActivation} color="amber" />
+          <StatCard icon={ShieldAlert} label="À activer" value={stats.pendingActivation} color="amber" />
         </div>
 
-        {/* Alerte utilisateurs en attente */}
+        {/* Alerte utilisateurs en attente d'activation admin */}
         {stats.pendingActivation > 0 && (
           <div className="mb-6 p-3 sm:p-4 bg-amber-50 border border-amber-200 rounded-xl flex flex-col sm:flex-row items-start sm:items-center gap-3">
             <ShieldAlert size={18} className="text-amber-600 flex-shrink-0" />
             <p className="text-amber-700 text-sm flex-1">
-              <strong>{stats.pendingActivation} utilisateur(s)</strong> en attente d'activation
+              <strong>{stats.pendingActivation} utilisateur(s)</strong> ont validé leur email et attendent votre activation.
             </p>
           </div>
         )}
 
-        {/* Barre de recherche et filtres - Version responsive */}
+        {/* Barre de recherche et filtres */}
         <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4 mb-6 shadow-sm">
-          {/* Recherche toujours visible */}
           <div className="flex gap-2">
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
@@ -388,32 +376,19 @@ const UsersManagement = () => {
             </button>
           </div>
 
-          {/* Filtres - cachés sur mobile par défaut */}
           <div className={`${showMobileFilters ? 'flex' : 'hidden'} lg:flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-100`}>
-            <select
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value)}
-              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500"
-            >
+            <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
               <option value="all">Tous les rôles</option>
               <option value="apprenant">Apprenants</option>
               <option value="formateur">Formateurs</option>
               <option value="admin">Administrateurs</option>
             </select>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500"
-            >
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
               <option value="all">Tous statuts</option>
               <option value="active">Actifs</option>
               <option value="inactive">Inactifs</option>
             </select>
-            <select
-              value={validationFilter}
-              onChange={(e) => setValidationFilter(e.target.value)}
-              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500"
-            >
+            <select value={validationFilter} onChange={(e) => setValidationFilter(e.target.value)} className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
               <option value="all">Validation: tous</option>
               <option value="validated">Email validé</option>
               <option value="not_validated">Email non validé</option>
@@ -421,20 +396,19 @@ const UsersManagement = () => {
           </div>
         </div>
 
-        {/* Tableau des utilisateurs - Version responsive */}
+        {/* Tableau des utilisateurs */}
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-          {/* Version Desktop - Tableau */}
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Utilisateur</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Matricule</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contact</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rôle</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Statut</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Validation</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Utilisateur</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Matricule</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rôle</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Statut</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Validation</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -457,7 +431,6 @@ const UsersManagement = () => {
             </table>
           </div>
 
-          {/* Version Mobile - Cartes */}
           <div className="md:hidden divide-y divide-gray-100">
             {currentUsers.map((user) => (
               <UserCardMobile
@@ -476,41 +449,26 @@ const UsersManagement = () => {
             ))}
           </div>
 
-          {/* État vide */}
           {filteredUsers.length === 0 && (
             <div className="text-center py-12 sm:py-16">
               <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Users size={28} className="text-gray-400" />
               </div>
               <p className="text-gray-500 font-medium">Aucun utilisateur trouvé</p>
-              <button
-                onClick={() => setShowImportModal(true)}
-                className="mt-4 px-5 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700"
-              >
+              <button onClick={() => setShowImportModal(true)} className="mt-4 px-5 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">
                 Importer des utilisateurs
               </button>
             </div>
           )}
 
-          {/* Pagination */}
           {totalPages > 1 && (
             <div className="px-4 sm:px-6 py-3 border-t border-gray-200 flex items-center justify-between">
-              <p className="text-xs sm:text-sm text-gray-500">
-                Page {currentPage} / {totalPages}
-              </p>
+              <p className="text-xs sm:text-sm text-gray-500">Page {currentPage} / {totalPages}</p>
               <div className="flex gap-2">
-                <button
-                  onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
-                  disabled={currentPage === 1}
-                  className="p-1.5 sm:p-2 border border-gray-200 rounded-lg disabled:opacity-50 hover:bg-gray-50"
-                >
+                <button onClick={() => setCurrentPage(p => Math.max(p - 1, 1))} disabled={currentPage === 1} className="p-1.5 sm:p-2 border border-gray-200 rounded-lg disabled:opacity-50 hover:bg-gray-50">
                   <ChevronLeft size={16} />
                 </button>
-                <button
-                  onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
-                  disabled={currentPage === totalPages}
-                  className="p-1.5 sm:p-2 border border-gray-200 rounded-lg disabled:opacity-50 hover:bg-gray-50"
-                >
+                <button onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))} disabled={currentPage === totalPages} className="p-1.5 sm:p-2 border border-gray-200 rounded-lg disabled:opacity-50 hover:bg-gray-50">
                   <ChevronRight size={16} />
                 </button>
               </div>
@@ -519,7 +477,6 @@ const UsersManagement = () => {
         </div>
       </div>
 
-      {/* Modal détails utilisateur */}
       {selectedUser && (
         <UserDetailsModal
           user={selectedUser}
@@ -531,7 +488,6 @@ const UsersManagement = () => {
         />
       )}
 
-      {/* Modal import */}
       {showImportModal && (
         <ImportExcel onClose={() => setShowImportModal(false)} onImportComplete={handleImportComplete} />
       )}
@@ -539,7 +495,7 @@ const UsersManagement = () => {
   );
 };
 
-// Composant carte statistique
+// Composant StatCard
 const StatCard = ({ icon: Icon, label, value, color }) => {
   const colors = {
     indigo: 'bg-indigo-50 text-indigo-600',
@@ -548,7 +504,8 @@ const StatCard = ({ icon: Icon, label, value, color }) => {
     red: 'bg-red-50 text-red-600',
     teal: 'bg-teal-50 text-teal-600',
     green: 'bg-green-50 text-green-600',
-    amber: 'bg-amber-50 text-amber-600'
+    amber: 'bg-amber-50 text-amber-600',
+    gray: 'bg-gray-50 text-gray-600'
   };
 
   return (
@@ -568,11 +525,11 @@ const StatCard = ({ icon: Icon, label, value, color }) => {
 
 // Composant ligne tableau desktop
 const UserRowDesktop = ({ user, currentAdmin, activatingUser, togglingStatus, resettingPassword, onActivate, onToggleStatus, onResetPassword, onDelete, onView }) => {
-  const RoleIcon = getRoleBadge(user.role).icon;
+  const roleBadge = getRoleBadge(user.role);
+  const RoleIcon = roleBadge.icon;
   const isAdmin = user.role === 'admin';
   const isCurrentUser = currentAdmin && (currentAdmin.id === user.id || currentAdmin._id === user._id);
-  const canActivate = user.isEmailValidated === true && user.isActive === false && !isAdmin;
-  const needsValidation = user.isEmailValidated === false && !isAdmin;
+  const needsAdminActivation = user.isEmailValidated === true && user.isActive === false && !isAdmin;
 
   return (
     <tr className="hover:bg-gray-50 transition-colors">
@@ -586,7 +543,6 @@ const UserRowDesktop = ({ user, currentAdmin, activatingUser, togglingStatus, re
               {user.prenom} {user.nom}
               {isCurrentUser && <span className="ml-2 text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">Vous</span>}
             </p>
-            <p className="text-xs text-gray-400">ID: {(user.id || user._id).slice(0, 8)}</p>
           </div>
         </div>
       </td>
@@ -597,9 +553,9 @@ const UserRowDesktop = ({ user, currentAdmin, activatingUser, togglingStatus, re
         <div className="text-xs text-gray-600">{user.email || '-'}</div>
       </td>
       <td className="px-6 py-3">
-        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-white ${getRoleBadge(user.role).class}`}>
+        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-white ${roleBadge.class}`}>
           <RoleIcon size={12} />
-          {getRoleBadge(user.role).text}
+          {roleBadge.text}
         </span>
       </td>
       <td className="px-6 py-3">
@@ -623,36 +579,46 @@ const UserRowDesktop = ({ user, currentAdmin, activatingUser, togglingStatus, re
       </td>
       <td className="px-6 py-3 text-right">
         <div className="flex items-center justify-end gap-1">
-          <button onClick={() => onView(user)} className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Détails">
+          <button onClick={() => onView(user)} className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg" title="Détails">
             <Eye size={15} />
           </button>
           
-          {canActivate && (
-            <button onClick={() => onActivate(user.id || user._id)} disabled={activatingUser === (user.id || user._id)} className="p-1.5 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 transition-colors" title="Activer">
-              {activatingUser === (user.id || user._id) ? <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent"></div> : <ShieldCheck size={14} />}
+          {/* 🔥 BOUTON VALIDER LE COMPTE - Pour les comptes email validé mais non activé */}
+          {needsAdminActivation && (
+            <button 
+              onClick={() => onActivate(user.id || user._id)} 
+              disabled={activatingUser === (user.id || user._id)} 
+              className="p-1.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50 flex items-center gap-1"
+              title="Valider le compte"
+            >
+              {activatingUser === (user.id || user._id) ? 
+                <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent"></div> : 
+                <ShieldCheck size={14} />
+              }
+              <span className="text-xs font-medium hidden sm:inline">Valider</span>
             </button>
           )}
           
-          {!isAdmin && !canActivate && user.isActive && (
-            <button onClick={() => onToggleStatus(user.id || user._id)} disabled={togglingStatus === (user.id || user._id)} className="p-1.5 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors" title="Désactiver">
+          {!isAdmin && user.isActive && (
+            <button onClick={() => onToggleStatus(user.id || user._id)} disabled={togglingStatus === (user.id || user._id)} className="p-1.5 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg" title="Désactiver">
               {togglingStatus === (user.id || user._id) ? <div className="animate-spin rounded-full h-3 w-3 border-2 border-orange-600 border-t-transparent"></div> : <PowerOff size={14} />}
             </button>
           )}
           
-          {!isAdmin && !canActivate && !user.isActive && (
-            <button onClick={() => onToggleStatus(user.id || user._id)} disabled={togglingStatus === (user.id || user._id)} className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="Activer">
+          {!isAdmin && !user.isActive && !needsAdminActivation && (
+            <button onClick={() => onToggleStatus(user.id || user._id)} disabled={togglingStatus === (user.id || user._id)} className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg" title="Activer">
               {togglingStatus === (user.id || user._id) ? <div className="animate-spin rounded-full h-3 w-3 border-2 border-green-600 border-t-transparent"></div> : <Power size={14} />}
             </button>
           )}
           
           {(!isAdmin || isCurrentUser) && (
-            <button onClick={() => onResetPassword(user.id || user._id)} disabled={resettingPassword === (user.id || user._id)} className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors" title="Réinitialiser MDP">
+            <button onClick={() => onResetPassword(user.id || user._id)} disabled={resettingPassword === (user.id || user._id)} className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg" title="Réinitialiser MDP">
               {resettingPassword === (user.id || user._id) ? <div className="animate-spin rounded-full h-3 w-3 border-2 border-amber-600 border-t-transparent"></div> : <Key size={14} />}
             </button>
           )}
           
           {!isAdmin && !isCurrentUser && (
-            <button onClick={() => onDelete(user.id || user._id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Supprimer">
+            <button onClick={() => onDelete(user.id || user._id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg" title="Supprimer">
               <Trash2 size={14} />
             </button>
           )}
@@ -664,14 +630,14 @@ const UserRowDesktop = ({ user, currentAdmin, activatingUser, togglingStatus, re
 
 // Composant carte mobile
 const UserCardMobile = ({ user, currentAdmin, activatingUser, togglingStatus, resettingPassword, onActivate, onToggleStatus, onResetPassword, onDelete, onView }) => {
-  const RoleIcon = getRoleBadge(user.role).icon;
+  const roleBadge = getRoleBadge(user.role);
+  const RoleIcon = roleBadge.icon;
   const isAdmin = user.role === 'admin';
   const isCurrentUser = currentAdmin && (currentAdmin.id === user.id || currentAdmin._id === user._id);
-  const canActivate = user.isEmailValidated === true && user.isActive === false && !isAdmin;
+  const needsAdminActivation = user.isEmailValidated === true && user.isActive === false && !isAdmin;
 
   return (
     <div className="p-4 space-y-3">
-      {/* En-tête carte */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-gradient-to-br from-indigo-100 to-purple-100 rounded-xl flex items-center justify-center text-base font-bold text-indigo-600">
@@ -690,7 +656,6 @@ const UserCardMobile = ({ user, currentAdmin, activatingUser, togglingStatus, re
         </button>
       </div>
 
-      {/* Informations */}
       <div className="grid grid-cols-2 gap-2 text-sm">
         <div>
           <p className="text-xs text-gray-400">Email</p>
@@ -698,14 +663,13 @@ const UserCardMobile = ({ user, currentAdmin, activatingUser, togglingStatus, re
         </div>
         <div>
           <p className="text-xs text-gray-400">Rôle</p>
-          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-medium text-white ${getRoleBadge(user.role).class}`}>
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-medium text-white ${roleBadge.class}`}>
             <RoleIcon size={10} />
-            {getRoleBadge(user.role).text}
+            {roleBadge.text}
           </span>
         </div>
       </div>
 
-      {/* Statuts */}
       <div className="flex flex-wrap gap-2">
         <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${user.isActive ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
           <div className={`w-1.5 h-1.5 rounded-full ${user.isActive ? 'bg-green-500' : 'bg-gray-400'}`}></div>
@@ -724,12 +688,11 @@ const UserCardMobile = ({ user, currentAdmin, activatingUser, togglingStatus, re
         )}
       </div>
 
-      {/* Actions */}
       <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
-        {canActivate && (
-          <button onClick={() => onActivate(user.id || user._id)} disabled={activatingUser === (user.id || user._id)} className="flex-1 px-3 py-1.5 bg-green-500 text-white rounded-lg text-xs font-medium hover:bg-green-600 disabled:opacity-50 flex items-center justify-center gap-1">
+        {needsAdminActivation && (
+          <button onClick={() => onActivate(user.id || user._id)} disabled={activatingUser === (user.id || user._id)} className="flex-1 px-3 py-1.5 bg-amber-500 text-white rounded-lg text-xs font-medium hover:bg-amber-600 disabled:opacity-50 flex items-center justify-center gap-1">
             {activatingUser === (user.id || user._id) ? <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent"></div> : <ShieldCheck size={12} />}
-            Activer
+            Valider
           </button>
         )}
         
@@ -761,12 +724,11 @@ const UserCardMobile = ({ user, currentAdmin, activatingUser, togglingStatus, re
 // Modal détails utilisateur
 const UserDetailsModal = ({ user, currentAdmin, activatingUser, onClose, onActivate, onResetPassword }) => {
   const isAdmin = user.role === 'admin';
-  const canActivate = user.isEmailValidated && !user.isActive && !isAdmin;
+  const needsAdminActivation = user.isEmailValidated && !user.isActive && !isAdmin;
 
   return (
     <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
       <div className="bg-white rounded-2xl max-w-md w-full max-h-[90vh] overflow-hidden shadow-xl" onClick={(e) => e.stopPropagation()}>
-        {/* En-tête */}
         <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-5">
           <div className="flex justify-between items-start">
             <div>
@@ -779,28 +741,20 @@ const UserDetailsModal = ({ user, currentAdmin, activatingUser, onClose, onActiv
           </div>
         </div>
 
-        {/* Corps */}
         <div className="p-5 space-y-4 overflow-y-auto max-h-[60vh]">
-          <div className="space-y-3">
-            <InfoRow label="Email" value={user.email || '-'} />
-            <InfoRow label="Téléphone" value={user.telephone || '-'} />
-            <InfoRow label="Rôle" value={user.role === 'admin' ? 'Administrateur' : user.role === 'formateur' ? 'Formateur' : 'Apprenant'} />
-            <InfoRow label="Statut" value={user.isActive ? 'Actif' : 'Inactif'} />
-            <InfoRow 
-              label="Validation email" 
-              value={user.isEmailValidated ? '✅ Validé' : '⏳ En attente'}
-              valueClass={user.isEmailValidated ? 'text-green-600' : 'text-amber-600'}
-            />
-            <InfoRow label="Date inscription" value={user.createdAt ? new Date(user.createdAt).toLocaleDateString('fr-FR') : '-'} />
-            <InfoRow label="Dernière connexion" value={user.lastLogin ? new Date(user.lastLogin).toLocaleDateString('fr-FR') : 'Jamais'} />
-          </div>
+          <InfoRow label="Email" value={user.email || '-'} />
+          <InfoRow label="Téléphone" value={user.telephone || '-'} />
+          <InfoRow label="Rôle" value={user.role === 'admin' ? 'Administrateur' : user.role === 'formateur' ? (user.formateurType === 'enseignant' ? 'Enseignant' : 'Formateur') : 'Apprenant'} />
+          <InfoRow label="Statut" value={user.isActive ? 'Actif' : 'Inactif'} />
+          <InfoRow label="Validation email" value={user.isEmailValidated ? '✅ Validé' : '⏳ En attente'} valueClass={user.isEmailValidated ? 'text-green-600' : 'text-amber-600'} />
+          <InfoRow label="Date inscription" value={user.createdAt ? new Date(user.createdAt).toLocaleDateString('fr-FR') : '-'} />
+          <InfoRow label="Dernière connexion" value={user.lastLogin ? new Date(user.lastLogin).toLocaleDateString('fr-FR') : 'Jamais'} />
         </div>
 
-        {/* Actions */}
         <div className="p-5 pt-0 flex gap-3">
-          {canActivate && (
-            <button onClick={() => { onActivate(user.id || user._id); onClose(); }} className="flex-1 px-4 py-2 bg-emerald-500 text-white rounded-xl hover:bg-emerald-600 flex items-center justify-center gap-2 text-sm font-medium">
-              <ShieldCheck size={16} /> Activer le compte
+          {needsAdminActivation && (
+            <button onClick={() => { onActivate(user.id || user._id); onClose(); }} className="flex-1 px-4 py-2 bg-amber-500 text-white rounded-xl hover:bg-amber-600 flex items-center justify-center gap-2 text-sm font-medium">
+              <ShieldCheck size={16} /> Valider le compte
             </button>
           )}
           <button onClick={() => { onResetPassword(user.id || user._id); onClose(); }} className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 text-sm font-medium">
@@ -812,21 +766,11 @@ const UserDetailsModal = ({ user, currentAdmin, activatingUser, onClose, onActiv
   );
 };
 
-// Composant ligne d'information
 const InfoRow = ({ label, value, valueClass = 'text-gray-800' }) => (
   <div>
     <p className="text-xs text-gray-400 uppercase tracking-wide">{label}</p>
     <p className={`text-sm font-medium ${valueClass}`}>{value}</p>
   </div>
 );
-
-const getRoleBadge = (role) => {
-  const badges = {
-    admin: { icon: Crown, text: 'Admin', class: 'bg-red-500' },
-    formateur: { icon: GraduationCap, text: 'Formateur', class: 'bg-blue-500' },
-    apprenant: { icon: Users, text: 'Apprenant', class: 'bg-emerald-500' }
-  };
-  return badges[role] || badges.apprenant;
-};
 
 export default UsersManagement;

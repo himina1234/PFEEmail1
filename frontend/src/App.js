@@ -1,15 +1,15 @@
-// App.js - Version corrigée pour apprenant
+// App.js
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { UserProvider } from "./components/context/UserContext";
 import Login from "./pages/Login";
-import AutoLogin from "./pages/AutoLogin";
 import Dashboard from "./pages/Dashboard";
 import UsersManagement from "./pages/UsersManagement";
 import Profile from "./pages/Profile";
 import Layout from "./components/Layout/Layout";
 import ApprenantDashboard from "./pages/ApprenantDashboard";
 import FormateurDashboard from "./pages/FormateurDashboard";
+import EnseignantDashboard from "./pages/EnseignantDashboard"; // À créer
 import ServiceManagement from "./pages/ServiceManagement";
 import FormationManagement from "./pages/FormationManagement";
 import Statistiques from "./pages/Statistiques";
@@ -20,83 +20,72 @@ import AdminInscriptions from "./pages/AdminInscriptions";
 import ApprenantMesFormations from "./pages/ApprenantMesFormations";
 import ApprenantPlanning from "./pages/ApprenantPlanning";
 import ApprenantCahierSuivi from "./pages/ApprenantCahierSuivi";
+import ValidateAccount from './pages/ValidateAccount';
+// ✅ VÉRIFICATION DU RÔLE ET TYPE
+const getUserRole = () => {
+  const currentUser = localStorage.getItem("currentUser");
+  if (!currentUser) return null;
+  try {
+    const user = JSON.parse(currentUser);
+    return user;
+  } catch (error) {
+    return null;
+  }
+};
 
 // ✅ ROUTE ADMIN
 const AdminRoute = ({ children }) => {
-  const currentUser = localStorage.getItem("currentUser");
-  if (!currentUser) return <Navigate to="/login" />;
-  try {
-    const user = JSON.parse(currentUser);
-    if (user.role === "admin") return children;
-    if (user.role === "formateur") return <Navigate to="/formateur" />;
-    if (user.role === "apprenant" || user.role === "user") return <Navigate to="/apprenant" />;
-  } catch (error) {
-    console.error(error);
+  const user = getUserRole();
+  if (!user) return <Navigate to="/login" />;
+  if (user.role === "admin") return children;
+  if (user.role === "formateur") {
+    if (user.formateurType === "enseignant") return <Navigate to="/enseignant" />;
+    return <Navigate to="/formateur" />;
   }
+  if (user.role === "apprenant") return <Navigate to="/apprenant" />;
   return <Navigate to="/login" />;
 };
 
-// ✅ ROUTE APPRENANT (CORRIGÉE)
+// ✅ ROUTE APPRENANT
 const ApprenantRoute = ({ children }) => {
-  const currentUser = localStorage.getItem("currentUser");
-  console.log("🔍 ApprenantRoute - currentUser:", currentUser);
-  
-  if (!currentUser) {
-    console.log("❌ Pas d'utilisateur, redirection login");
-    return <Navigate to="/login" />;
-  }
-  
-  try {
-    const user = JSON.parse(currentUser);
-    console.log("👤 Rôle utilisateur:", user.role);
-    
-    if (user.role === "apprenant" || user.role === "user") {
-      console.log("✅ Apprenant autorisé");
-      return children;
-    }
-    if (user.role === "admin") {
-      console.log("➡️ Redirection admin vers dashboard");
-      return <Navigate to="/dashboard" />;
-    }
-    if (user.role === "formateur") {
-      console.log("➡️ Redirection formateur");
-      return <Navigate to="/formateur" />;
-    }
-  } catch (error) {
-    console.error("Erreur:", error);
+  const user = getUserRole();
+  if (!user) return <Navigate to="/login" />;
+  if (user.role === "apprenant") return children;
+  if (user.role === "admin") return <Navigate to="/dashboard" />;
+  if (user.role === "formateur") {
+    if (user.formateurType === "enseignant") return <Navigate to="/enseignant" />;
+    return <Navigate to="/formateur" />;
   }
   return <Navigate to="/login" />;
 };
 
-// ✅ ROUTE FORMATEUR
+// ✅ ROUTE FORMATEUR (type formateur uniquement)
 const FormateurRoute = ({ children }) => {
-  const currentUser = localStorage.getItem("currentUser");
-  if (!currentUser) return <Navigate to="/login" />;
-  try {
-    const user = JSON.parse(currentUser);
-    if (user.role === "formateur") return children;
-    if (user.role === "admin") return <Navigate to="/dashboard" />;
-    if (user.role === "apprenant" || user.role === "user") return <Navigate to="/apprenant" />;
-  } catch (error) {
-    console.error(error);
-  }
+  const user = getUserRole();
+  if (!user) return <Navigate to="/login" />;
+  if (user.role === "formateur" && user.formateurType === "formateur") return children;
+  if (user.role === "admin") return <Navigate to="/dashboard" />;
+  if (user.role === "formateur" && user.formateurType === "enseignant") return <Navigate to="/enseignant" />;
+  if (user.role === "apprenant") return <Navigate to="/apprenant" />;
+  return <Navigate to="/login" />;
+};
+
+// ✅ ROUTE ENSEIGNANT (type enseignant uniquement)
+const EnseignantRoute = ({ children }) => {
+  const user = getUserRole();
+  if (!user) return <Navigate to="/login" />;
+  if (user.role === "formateur" && user.formateurType === "enseignant") return children;
+  if (user.role === "admin") return <Navigate to="/dashboard" />;
+  if (user.role === "formateur" && user.formateurType === "formateur") return <Navigate to="/formateur" />;
+  if (user.role === "apprenant") return <Navigate to="/apprenant" />;
   return <Navigate to="/login" />;
 };
 
 // ✅ ROUTE USER GÉNÉRIQUE
-const UserRoute = ({ children, allowedRoles = [] }) => {
-  const currentUser = localStorage.getItem("currentUser");
-  if (!currentUser) return <Navigate to="/login" />;
-  try {
-    const user = JSON.parse(currentUser);
-    if (allowedRoles.length === 0 || allowedRoles.includes(user.role)) return children;
-    if (user.role === "admin") return <Navigate to="/dashboard" />;
-    if (user.role === "formateur") return <Navigate to="/formateur" />;
-    if (user.role === "apprenant" || user.role === "user") return <Navigate to="/apprenant" />;
-  } catch (error) {
-    console.error(error);
-  }
-  return <Navigate to="/login" />;
+const UserRoute = ({ children }) => {
+  const user = getUserRole();
+  if (!user) return <Navigate to="/login" />;
+  return children;
 };
 
 function App() {
@@ -110,7 +99,6 @@ function App() {
 
           {/* PAGE DE LOGIN */}
           <Route path="/login" element={<Login />} />
-          <Route path="/auto-login" element={<AutoLogin />} />
 
           {/* Routes Admin */}
           <Route path="/dashboard" element={<AdminRoute><Layout><Dashboard /></Layout></AdminRoute>} />
@@ -127,16 +115,21 @@ function App() {
           <Route path="/apprenant/cahier-suivi" element={<ApprenantRoute><Layout><ApprenantCahierSuivi /></Layout></ApprenantRoute>} />
           <Route path="/apprenant/formations" element={<ApprenantRoute><Layout><ApprenantFormations /></Layout></ApprenantRoute>} />
 
-          {/* Routes Formateur */}
+          {/* Routes Formateur (type formateur) */}
           <Route path="/formateur" element={<FormateurRoute><Layout><FormateurDashboard /></Layout></FormateurRoute>} />
+
+          {/* Routes Enseignant (type enseignant) */}
+          <Route path="/enseignant" element={<EnseignantRoute><Layout><EnseignantDashboard /></Layout></EnseignantRoute>} />
 
           {/* Route Profil (accessible à tous connectés) */}
           <Route path="/profile" element={<UserRoute><Layout><Profile /></Layout></UserRoute>} />
           <Route path="/chat" element={<Chat />} />
 
           {/* Redirection */}
+          <Route path="/validate-account" element={<ValidateAccount />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        
       </BrowserRouter>
     </UserProvider>
   );

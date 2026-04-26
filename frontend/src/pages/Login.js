@@ -1,7 +1,5 @@
-// Login.js
+// pages/Login.js
 import React, { useState } from 'react';
-import { useDispatch } from 'react-redux';
-import { login } from '../store/slices/authSlice';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
@@ -10,7 +8,6 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const dispatch = useDispatch();
   const navigate = useNavigate();
 
   const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
@@ -21,120 +18,63 @@ const Login = () => {
     setError('');
 
     try {
-      // 1. Vérifier d'abord dans localStorage (fallback)
-      const savedUsers = localStorage.getItem('users');
-      const users = savedUsers ? JSON.parse(savedUsers) : [];
+      const response = await axios.post(`${API_URL}/auth/login`, {
+        matricule,
+        password
+      });
 
-      const localUser = users.find(
-        u => u.matricule === matricule && u.password === password
-      );
-
-      if (localUser) {
-        // VÉRIFICATION CRITIQUE : Vérifier si le compte est actif dans localStorage
-        const isActive = localUser.status === 'actif' || localUser.status === 'active' || localUser.isActive === true || !localUser.status;
+      if (response.data.success) {
+        const user = response.data.user;
         
-        if (!isActive) {
-          setError('❌ Votre compte est désactivé. Veuillez contacter un administrateur.');
-          setIsLoading(false);
-          return;
-        }
-
-        let userRole = localUser.role;
-        let redirectPath = '';
-
-        if (userRole === 'admin') {
+        // Déterminer le dashboard selon le rôle ET le type de formateur
+        let redirectPath = '/';
+        
+        if (user.role === 'admin') {
           redirectPath = '/dashboard';
-        } else if (userRole === 'formateur') {
-          redirectPath = '/formateur';
-        } else {
-          userRole = 'user';
-          redirectPath = '/apprenant';
-        }
-
-        let avatar = '👤';
-        if (userRole === 'admin') avatar = '👑';
-        else if (userRole === 'formateur') avatar = '🎓';
-
-        const userData = {
-          id: localUser.id,
-          matricule: localUser.matricule,
-          nom: localUser.nom,
-          prenom: localUser.prenom,
-          role: userRole,
-          avatar: avatar,
-          fullName: `${localUser.prenom} ${localUser.nom}`,
-          email: localUser.email || '',
-          telephone: localUser.telephone || '',
-          status: localUser.status || 'actif',
-          source: 'localstorage',
-        };
-
-        localStorage.setItem('currentUser', JSON.stringify(userData));
-        navigate(redirectPath);
-        return;
-      }
-
-      // 2. Sinon, essayer la connexion MongoDB
-      const result = await dispatch(login({ matricule, password }));
-
-      if (!result.error && result.payload) {
-        const userData = result.payload.user;
-        
-        // VÉRIFICATION CRITIQUE : Vérifier le statut retourné par le serveur
-        const userStatus = userData.status || userData.isActive;
-        const isActive = userStatus === 'actif' || userStatus === 'active' || userStatus === true;
-        
-        if (!isActive) {
-          setError('❌ Votre compte est désactivé. Veuillez contacter un administrateur.');
-          setIsLoading(false);
-          return;
-        }
-        
-        let userRole = userData.role;
-        let redirectPath = '';
-        
-        if (userRole === 'admin') {
-          redirectPath = '/dashboard';
-        } else if (userRole === 'formateur') {
-          redirectPath = '/formateur';
-        } else {
-          userRole = 'user';
+        } 
+        else if (user.role === 'formateur') {
+          if (user.formateurType === 'enseignant') {
+            redirectPath = '/enseignant';
+          } else {
+            redirectPath = '/formateur';
+          }
+        } 
+        else if (user.role === 'apprenant') {
           redirectPath = '/apprenant';
         }
         
-        let avatar = '👤';
-        if (userRole === 'admin') avatar = '👑';
-        else if (userRole === 'formateur') avatar = '🎓';
-        
+        // Stocker les informations utilisateur
         const userForStorage = {
-          id: userData.id,
-          matricule: userData.matricule,
-          nom: userData.nom,
-          prenom: userData.prenom || userData.nom,
-          role: userRole,
-          avatar: avatar,
-          fullName: `${userData.prenom || userData.nom} ${userData.nom}`,
-          email: userData.email,
-          telephone: userData.telephone,
-          status: userData.status || 'actif',
-          source: 'mongodb',
+          id: user.id,
+          matricule: user.matricule,
+          nom: user.nom,
+          prenom: user.prenom,
+          role: user.role,
+          formateurType: user.formateurType,
+          fullName: `${user.prenom} ${user.nom}`,
+          email: user.email,
+          telephone: user.telephone,
+          avatar: user.avatar || (user.role === 'admin' ? '👑' : user.role === 'formateur' ? '🎓' : '👤')
         };
         
         localStorage.setItem('currentUser', JSON.stringify(userForStorage));
-        if (result.payload.token) {
-          localStorage.setItem('token', result.payload.token);
-        }
+        localStorage.setItem('token', response.data.token);
+        
+        console.log('✅ Connexion réussie - Redirection vers:', redirectPath);
         navigate(redirectPath);
-      } else {
-        setError('Matricule ou mot de passe incorrect');
       }
     } catch (err) {
       console.error('Erreur de connexion:', err);
-      // Gérer l'erreur 403 (compte désactivé)
       if (err.response?.status === 403) {
-        setError('❌ Votre compte est désactivé. Veuillez contacter un administrateur.');
+        if (err.response?.data?.code === 'EMAIL_NOT_VALIDATED') {
+          setError('❌ Veuillez valider votre email via le lien reçu.');
+        } else if (err.response?.data?.code === 'PENDING_APPROVAL') {
+          setError('⏳ Votre compte est en attente d\'activation par un administrateur.');
+        } else {
+          setError(err.response?.data?.message || 'Compte désactivé');
+        }
       } else {
-        setError('Erreur de connexion au serveur');
+        setError(err.response?.data?.message || 'Matricule ou mot de passe incorrect');
       }
     } finally {
       setIsLoading(false);
@@ -142,17 +82,15 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 relative overflow-hidden">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-blue-50 relative overflow-hidden">
       <div className="relative z-10 w-full max-w-[420px] p-8 rounded-3xl bg-white border border-gray-200 shadow-xl mx-4">
         
         {/* Header */}
         <div className="text-center mb-8">
           <div className="flex flex-col items-center gap-3">
-            <img 
-              src="../image/imag4.jpg" 
-              alt="Algérie Poste Logo" 
-              className="h-20 w-auto object-contain mb-2" 
-            />
+            <div className="w-20 h-20 bg-gradient-to-br from-blue-600 to-blue-800 rounded-2xl flex items-center justify-center shadow-lg">
+              <span className="text-white font-black text-2xl">AP</span>
+            </div>
             <div className="flex flex-col">
               <span className="font-black text-2xl tracking-tighter text-blue-900 leading-none uppercase">
                 Algérie Poste
@@ -176,45 +114,38 @@ const Login = () => {
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Matricule Field */}
           <div>
             <label className="block text-gray-700 text-sm font-semibold mb-2">
               Matricule
             </label>
-            <div className="relative">
-              <input
-                type="text"
-                value={matricule}
-                onChange={(e) => setMatricule(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all"
-                placeholder="Entrez votre matricule"
-                required
-              />
-            </div>
+            <input
+              type="text"
+              value={matricule}
+              onChange={(e) => setMatricule(e.target.value.toUpperCase())}
+              className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all"
+              placeholder="Ex: ADMIN001 ou FRM20260001"
+              required
+            />
           </div>
 
-          {/* Password Field */}
           <div>
             <label className="block text-gray-700 text-sm font-semibold mb-2">
               Mot de passe
             </label>
-            <div className="relative">
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all"
-                placeholder="Entrez votre mot de passe"
-                required
-              />
-            </div>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all"
+              placeholder="Entrez votre mot de passe"
+              required
+            />
           </div>
 
-          {/* Submit Button */}
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-lg shadow-blue-200 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed mt-2"
+            className="w-full py-3.5 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold shadow-lg shadow-blue-200 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed mt-2"
           >
             {isLoading ? (
               <span className="flex items-center justify-center gap-2">

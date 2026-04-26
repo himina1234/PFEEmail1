@@ -1,52 +1,63 @@
-const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
-
+// ============ MODÈLE USER CORRIGÉ ============
 const userSchema = new mongoose.Schema({
-  nom: {
-    type: String,
-    required: true,
-    trim: true
+  nom: { type: String, required: true },
+  prenom: { type: String, default: '' },
+  matricule: { type: String, unique: true, sparse: true }, // ← changed: required: false
+  email: { type: String, required: true, unique: true },
+  telephone: { type: String, default: '' },
+  password: { type: String, required: true },
+  role: { 
+    type: String, 
+    enum: ['admin', 'apprenant', 'formateur'], 
+    default: 'apprenant' 
   },
-  matricule: {
-    type: String,
-    required: true,
-    unique: true
+  formateurType: { 
+    type: String, 
+    enum: ['formateur', 'enseignant', null], 
+    default: null 
   },
-  email: {
-    type: String,
-    required: true,
-    unique: true,
-    lowercase: true
-  },
-  password: {
-    type: String,
-    required: true
-  },
-  role: {
-    type: String,
-    enum: ['admin', 'apprenant', 'formateur'],
-    default: 'apprenant'
-  },
-  isActive: {
-    type: Boolean,
-    default: true
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  }
+  isActive: { type: Boolean, default: false },
+  isEmailValidated: { type: Boolean, default: false },
+  validationToken: { type: String, default: null },
+  status: { type: String, default: 'pending' },
+  avatar: { type: String, default: null },
+  dateNaissance: { type: Date, default: null },
+  sexe: { type: String, default: null },
+  adresse: { type: String, default: '' },
+  lastLogin: { type: Date, default: null },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
 });
 
-// Hacher le mot de passe avant de sauvegarder
-userSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
-  this.password = await bcrypt.hash(this.password, 10);
+// Générer matricule automatiquement AVANT validation
+userSchema.pre('validate', async function(next) {
+  if (!this.matricule) {
+    try {
+      let prefix = 'APP';
+      if (this.role === 'admin') prefix = 'ADM';
+      else if (this.role === 'formateur') {
+        if (this.formateurType === 'enseignant') prefix = 'ENS';
+        else prefix = 'FRM';
+      }
+      
+      const year = new Date().getFullYear();
+      
+      // Compter les utilisateurs existants avec le même préfixe
+      let count = await mongoose.model('User').countDocuments({ 
+        matricule: { $regex: `^${prefix}${year}` }
+      });
+      
+      // Générer le matricule
+      this.matricule = `${prefix}${year}${String(count + 1).padStart(4, '0')}`;
+      
+      console.log(`✅ Matricule généré: ${this.matricule}`);
+    } catch (error) {
+      console.error('Erreur génération matricule:', error);
+      // Fallback: générer un matricule temporaire
+      this.matricule = `TMP${Date.now()}`;
+    }
+  }
   next();
 });
 
-// Méthode pour comparer les mots de passe
-userSchema.methods.comparePassword = async function(password) {
-  return await bcrypt.compare(password, this.password);
-};
-
-module.exports = mongoose.model('User', userSchema);
+const User = mongoose.model('User', userSchema);

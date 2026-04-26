@@ -1,4 +1,4 @@
-// ImportExcel.js - Version complète avec MongoDB (à placer dans components/Users/)
+// ImportExcel.js - Version avec Type Formateur/Enseignant
 import React, { useState, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -6,7 +6,8 @@ import axios from 'axios';
 import { 
   FileSpreadsheet, UserPlus, GraduationCap, X, 
   Download, UploadCloud, CheckCircle2, AlertCircle, 
-  Info, Loader2, Database, ShieldCheck, Trash2
+  Info, Loader2, Database, ShieldCheck, Trash2,
+  Users, School
 } from 'lucide-react';
 
 const ImportExcel = ({ onClose, onImportComplete }) => {
@@ -19,7 +20,14 @@ const ImportExcel = ({ onClose, onImportComplete }) => {
   const [importResult, setImportResult] = useState(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [userType, setUserType] = useState('apprenant');
-  const [newUser, setNewUser] = useState({ nom: '', prenom: '', email: '', telephone: '' });
+  const [formateurType, setFormateurType] = useState('formateur'); // 'formateur' ou 'enseignant'
+  const [newUser, setNewUser] = useState({ 
+    nom: '', 
+    prenom: '', 
+    email: '', 
+    telephone: '',
+    formateurType: 'formateur'
+  });
   const fileInputRef = useRef(null);
 
   const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
@@ -63,13 +71,25 @@ const ImportExcel = ({ onClose, onImportComplete }) => {
         const sheetName = workbook.SheetNames[0];
         const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
         
-        const validatedData = jsonData.map(row => ({
-          nom: String(row.Nom || row.nom || row.NAME || '').trim(),
-          prenom: String(row.Prenom || row.prenom || row.FirstName || '').trim(),
-          email: String(row.Email || row.email || '').trim(),
-          telephone: String(row.Telephone || row.telephone || row.Phone || '').trim(),
-          role: String(row.Role || row.role || 'apprenant').toLowerCase()
-        })).filter(u => u.nom && u.prenom && u.email);
+        const validatedData = jsonData.map(row => {
+          let role = String(row.Role || row.role || 'apprenant').toLowerCase();
+          let formateurType = null;
+          
+          // Si c'est un formateur, vérifier le sous-type
+          if (role === 'formateur') {
+            const typeValue = String(row.TypeFormateur || row.typeFormateur || row.Type || 'formateur').toLowerCase();
+            formateurType = typeValue === 'enseignant' ? 'enseignant' : 'formateur';
+          }
+          
+          return {
+            nom: String(row.Nom || row.nom || row.NAME || '').trim(),
+            prenom: String(row.Prenom || row.prenom || row.FirstName || '').trim(),
+            email: String(row.Email || row.email || '').trim(),
+            telephone: String(row.Telephone || row.telephone || row.Phone || '').trim(),
+            role: role,
+            formateurType: formateurType
+          };
+        }).filter(u => u.nom && u.prenom && u.email);
 
         if (validatedData.length === 0) {
           setError("Le fichier ne contient aucune donnée valide (colonnes 'nom', 'prenom' et 'email' requises).");
@@ -112,7 +132,8 @@ const ImportExcel = ({ onClose, onImportComplete }) => {
         prenom: user.prenom,
         email: user.email,
         telephone: user.telephone || '',
-        role: user.role === 'formateur' ? 'formateur' : 'apprenant'
+        role: user.role === 'formateur' ? 'formateur' : 'apprenant',
+        formateurType: user.formateurType || null
       }));
 
       setCurrentTask(`Envoi de ${usersToImport.length} utilisateurs vers MongoDB...`);
@@ -140,7 +161,6 @@ const ImportExcel = ({ onClose, onImportComplete }) => {
           exportCredentials(response.data.data.created);
         }
 
-        // Rafraîchir la liste des utilisateurs
         if (onImportComplete) {
           onImportComplete();
         }
@@ -184,7 +204,8 @@ const ImportExcel = ({ onClose, onImportComplete }) => {
         prenom: newUser.prenom,
         email: newUser.email,
         telephone: newUser.telephone || '',
-        role: userType
+        role: userType,
+        formateurType: userType === 'formateur' ? formateurType : null
       };
 
       const response = await axios.post(`${API_URL}/users/import-batch`,
@@ -201,7 +222,7 @@ const ImportExcel = ({ onClose, onImportComplete }) => {
         exportCredentials(response.data.data.created);
         setImportResult({
           success: true,
-          message: `Utilisateur ${newUser.prenom} ${newUser.nom} ajouté avec succès.`
+          message: `${userType === 'formateur' ? (formateurType === 'enseignant' ? 'Enseignant' : 'Formateur') : 'Apprenant'} ${newUser.prenom} ${newUser.nom} ajouté avec succès.`
         });
         
         if (onImportComplete) {
@@ -210,7 +231,8 @@ const ImportExcel = ({ onClose, onImportComplete }) => {
         
         setTimeout(() => {
           setShowAddForm(false);
-          setNewUser({ nom: '', prenom: '', email: '', telephone: '' });
+          setNewUser({ nom: '', prenom: '', email: '', telephone: '', formateurType: 'formateur' });
+          setFormateurType('formateur');
           setImportResult(null);
           onClose();
         }, 2000);
@@ -232,7 +254,7 @@ const ImportExcel = ({ onClose, onImportComplete }) => {
       Prenom: u.prenom,
       Email: u.email,
       Telephone: u.telephone || '',
-      Role: u.role === 'formateur' ? 'Formateur' : 'Apprenant'
+      Role: u.role === 'formateur' ? (u.formateurType === 'enseignant' ? 'Enseignant' : 'Formateur') : 'Apprenant'
     }));
     
     const ws = XLSX.utils.json_to_sheet(data);
@@ -244,8 +266,9 @@ const ImportExcel = ({ onClose, onImportComplete }) => {
 
   const downloadTemplate = () => {
     const template = [
-      { Nom: 'BENALI', Prenom: 'Ahmed', Email: 'ahmed.benali@poste.dz', Telephone: '0555123456', Role: 'formateur' },
-      { Nom: 'MEHDI', Prenom: 'Karim', Email: 'karim.mehdi@poste.dz', Telephone: '0555778899', Role: 'apprenant' }
+      { Nom: 'BENALI', Prenom: 'Ahmed', Email: 'ahmed.benali@poste.dz', Telephone: '0555123456', Role: 'formateur', TypeFormateur: 'formateur' },
+      { Nom: 'MEHDI', Prenom: 'Karim', Email: 'karim.mehdi@poste.dz', Telephone: '0555778899', Role: 'enseignant', TypeFormateur: 'enseignant' },
+      { Nom: 'SAIDI', Prenom: 'Samir', Email: 'samir.saidi@poste.dz', Telephone: '0555332211', Role: 'apprenant', TypeFormateur: '' }
     ];
     const ws = XLSX.utils.json_to_sheet(template);
     const wb = XLSX.utils.book_new();
@@ -306,10 +329,10 @@ const ImportExcel = ({ onClose, onImportComplete }) => {
               {/* Boutons d'ajout rapide */}
               <div className="grid grid-cols-2 gap-4">
                 <button onClick={() => { setShowAddForm(true); setUserType('apprenant'); }} className="group flex flex-col items-center gap-2 p-4 bg-blue-50 border border-blue-100 rounded-2xl hover:bg-blue-600 hover:text-white transition-all">
-                  <UserPlus className="text-blue-600 group-hover:text-white" size={24} />
+                  <Users className="text-blue-600 group-hover:text-white" size={24} />
                   <span className="font-bold text-sm uppercase">Nouvel Apprenant</span>
                 </button>
-                <button onClick={() => { setShowAddForm(true); setUserType('formateur'); }} className="group flex flex-col items-center gap-2 p-4 bg-amber-50 border border-amber-100 rounded-2xl hover:bg-amber-600 hover:text-white transition-all">
+                <button onClick={() => { setShowAddForm(true); setUserType('formateur'); setFormateurType('formateur'); }} className="group flex flex-col items-center gap-2 p-4 bg-amber-50 border border-amber-100 rounded-2xl hover:bg-amber-600 hover:text-white transition-all">
                   <GraduationCap className="text-amber-600 group-hover:text-white" size={24} />
                   <span className="font-bold text-sm uppercase">Nouveau Formateur</span>
                 </button>
@@ -319,20 +342,53 @@ const ImportExcel = ({ onClose, onImportComplete }) => {
               {showAddForm && (
                 <div className="p-6 bg-slate-50 border border-slate-200 rounded-3xl">
                   <div className="flex justify-between mb-4">
-                    <h4 className="font-black text-slate-700 uppercase">Saisie manuelle : {userType === 'apprenant' ? 'Apprenant' : 'Formateur'}</h4>
+                    <h4 className="font-black text-slate-700 uppercase">
+                      Saisie manuelle : {userType === 'apprenant' ? 'Apprenant' : (formateurType === 'enseignant' ? 'Enseignant' : 'Formateur')}
+                    </h4>
                     <button onClick={() => setShowAddForm(false)} className="text-slate-400"><X size={18}/></button>
                   </div>
+                  
+                  {/* Sélection du type pour formateur */}
+                  {userType === 'formateur' && (
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                      <button
+                        onClick={() => setFormateurType('formateur')}
+                        className={`py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${
+                          formateurType === 'formateur' 
+                            ? 'bg-amber-600 text-white shadow-lg' 
+                            : 'bg-white border-2 border-amber-200 text-amber-700 hover:bg-amber-50'
+                        }`}
+                      >
+                        <GraduationCap size={18} />
+                        Formateur
+                      </button>
+                      <button
+                        onClick={() => setFormateurType('enseignant')}
+                        className={`py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${
+                          formateurType === 'enseignant' 
+                            ? 'bg-emerald-600 text-white shadow-lg' 
+                            : 'bg-white border-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50'
+                        }`}
+                      >
+                        <School size={18} />
+                        Enseignant
+                      </button>
+                    </div>
+                  )}
+                  
                   <div className="grid grid-cols-2 gap-4 mb-4">
                     <input 
                       type="text" 
                       placeholder="Nom" 
                       className="modern-input" 
+                      value={newUser.nom}
                       onChange={e => setNewUser({...newUser, nom: e.target.value})} 
                     />
                     <input 
                       type="text" 
                       placeholder="Prénom" 
                       className="modern-input" 
+                      value={newUser.prenom}
                       onChange={e => setNewUser({...newUser, prenom: e.target.value})} 
                     />
                   </div>
@@ -340,12 +396,14 @@ const ImportExcel = ({ onClose, onImportComplete }) => {
                     type="email" 
                     placeholder="Email" 
                     className="modern-input mb-4" 
+                    value={newUser.email}
                     onChange={e => setNewUser({...newUser, email: e.target.value})} 
                   />
                   <input 
                     type="tel" 
                     placeholder="Téléphone (optionnel)" 
                     className="modern-input mb-4" 
+                    value={newUser.telephone}
                     onChange={e => setNewUser({...newUser, telephone: e.target.value})} 
                   />
                   <button 
@@ -394,7 +452,11 @@ const ImportExcel = ({ onClose, onImportComplete }) => {
                   <div className="max-h-40 overflow-y-auto space-y-1">
                     {previewData.slice(0, 5).map((item, idx) => (
                       <div key={idx} className="text-xs text-slate-600 py-1 border-b border-slate-200">
-                        {item.nom} {item.prenom} - {item.email} - {item.role || 'apprenant'}
+                        {item.nom} {item.prenom} - {item.email} - {
+                          item.role === 'formateur' 
+                            ? (item.formateurType === 'enseignant' ? 'Enseignant' : 'Formateur')
+                            : 'Apprenant'
+                        }
                       </div>
                     ))}
                     {previewData.length > 5 && (
